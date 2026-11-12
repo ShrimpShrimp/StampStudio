@@ -1,6 +1,6 @@
-# First-pass development evidence — November 12, 2026
+# Development evidence — November 12, 2026
 
-These screenshots were captured from the working application during implementation. They document the first functional pass, not separate historical prototypes or participant research. No user study has been conducted.
+These screenshots were captured from the working application during implementation. Captures 01–03 document the first functional pass; capture 04 documents the subsequent interaction revision. They are not participant research. No user study has been conducted.
 
 ## 01 — A user-drawn symbol becomes the stamp
 
@@ -26,6 +26,18 @@ The initial six Chrome integration tests passed locally. Pixel checks confirmed 
 
 The native browser automation could exercise simple clicks, holds, and drags, but could not reliably overlap a held click with a scroll. Dedicated automated browser tests verified wheel/keyboard combinations using controlled pointer events instead. This is a tooling constraint, not a participant observation.
 
+## 04 — Placement first, pressure second
+
+Feedback from the project owner: the continuous trail felt like drawing, and uniform darkening missed the act of working pressure around a physical stamp. The revised direction separates placement from ink transfer.
+
+`04-place-and-pressure.jpg` is an actual automated browser capture of the revised version. Both impressions use the same square outline. The left impression received one short press along its left edge; the right impression received eight short contacts around its perimeter. The missing edges on the left and fuller coverage on the right result from where pressure was applied.
+
+Behavior change: the first click sets the center and leaves no ink. Subsequent presses apply a localized contact field to the stamp face. Moving during contact shifts pressure, while the stamp's center remains fixed. Moving outside pauses transfer. Lifting reveals the paper, and placing elsewhere starts another impression. Twisting remains available during contact. This deliberately replaces the first pass's continuous drag behavior.
+
+The carrier has a border, grip marks, a slight directional lean, and a contact indicator. Size increases from 10% to approximately 17% of paper width by default to give the pressure interaction more room.
+
+Validation: the revised browser suite checks placement without ink, anchored movement, local opacity buildup, opposite-edge coverage, stopping outside the face, both twist directions, lift, undo, clear, export, stage preservation, and narrow layouts. An initial test sampled the left edge before releasing the pointer, allowing an extra animation frame before the comparison; its baseline was corrected to sample after release.
+
 ## Next review
 
-Have the project owner try the actual mouse/trackpad experience. Review wheel sensitivity, stamp scale, ink buildup, and whether the drag's patterned band feels expressive. These are tuning questions; automated correctness checks do not establish how satisfying an interaction feels.
+Try placing, pressing around the edges, and lifting with a real mouse or trackpad. Assess whether the contact area is too broad or narrow, how long useful coverage takes, and whether the carrier communicates physical pressure clearly. Automated checks establish behavior, not how satisfying it feels.

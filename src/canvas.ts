@@ -28,15 +28,6 @@ export function pointOn(canvas: HTMLCanvasElement, e: PointerEvent): Point {
   }
 }
 
-// Ink is proportional to distance/rotation, independent of pointer-event frequency.
-export function sweep(from: Pose, to: Pose, size: number) {
-  const distance = Math.hypot(to.x - from.x, to.y - from.y)
-  const turn = Math.abs(to.angle - from.angle)
-  const steps = Math.max(1, Math.ceil(distance / (size * 0.045)), Math.ceil(turn / 0.035))
-  const alpha = -Math.expm1(-(distance / size * 2.8 + turn * 0.38) / steps)
-  return { steps, alpha }
-}
-
 /** Transparent original artwork; one history entry per pen/eraser stroke. */
 export class DesignPad {
   private ctx: CanvasRenderingContext2D
@@ -132,21 +123,28 @@ export class DesignPad {
   destroy() { this.abort.abort() }
 }
 
-/** Paper pixels, immutable stamp mask, and transient cursor are separate layers. */
+/** Placement is separate from contact. Pressure changes coverage at a fixed center. */
 export class StampEngine {
   private ctx: CanvasRenderingContext2D
   private overlayCtx: CanvasRenderingContext2D
   private mask = makeCanvas(DESIGN_SIZE, DESIGN_SIZE)
+  private contactMask = makeCanvas(DESIGN_SIZE, DESIGN_SIZE)
+  private contactCtx = context(this.contactMask)
   private history: { pixels: ImageData; count: number }[] = []
   private pointer: number | null = null
+  private interaction: 'place' | 'pressure' | null = null
   private pose: Pose = { x: 0, y: 0, angle: 0 }
+  private pressure: Point = { x: 0, y: 0 }
+  private hover: Point | null = null
   private visible = false
+  private contact = false
   private frame = 0
   private lastTime = 0
   private keys = new Set<string>()
   private abort = new AbortController()
-  size = 180
+  size = 300
   count = 0
+  placed = false
   enabled = false
 
   constructor(readonly paper: HTMLCanvasElement, readonly overlay: HTMLCanvasElement, private changed: () => void) {
@@ -166,11 +164,19 @@ export class StampEngine {
     window.addEventListener('keyup', this.keyup, options)
     window.addEventListener('blur', this.finish, options)
     document.addEventListener('visibilitychange', this.visibility, options)
+    this.sync()
   }
 
   get canUndo() { return this.history.length > 0 }
-  get isPressed() { return this.pointer !== null }
+  get isPressed() { return this.interaction === 'pressure' }
   get angle() { return this.pose.angle }
+
+  private sync() {
+    this.overlay.dataset.placed = String(this.placed)
+    this.overlay.dataset.pressed = String(this.isPressed)
+    this.changed()
+  }
+
   setStamp(original: HTMLCanvasElement) {
     const ctx = context(this.mask)
     ctx.clearRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
@@ -179,7 +185,6 @@ export class StampEngine {
     ctx.globalCompositeOperation = 'source-in'
     ctx.fillStyle = INK
     ctx.fillRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
-    // A fixed, very light rubber grain. No random displacement of the user's shape.
     ctx.globalCompositeOperation = 'destination-out'
     ctx.fillStyle = 'rgba(0,0,0,0.22)'
     let seed = 713
@@ -188,142 +193,255 @@ export class StampEngine {
     ctx.globalCompositeOperation = 'source-over'
     this.preview()
   }
+
   private snapshot() {
     this.history.push({ pixels: this.ctx.getImageData(0, 0, PAPER_WIDTH, PAPER_HEIGHT), count: this.count })
-    // Fixed bound: about 104 MB maximum of uncompressed paper snapshots.
     if (this.history.length > 12) this.history.shift()
   }
-  private deposit(pose: Pose, opacity: number) {
-    if (opacity <= 0) return
+
+  private local(point: Point): Point {
+    const dx = point.x - this.pose.x, dy = point.y - this.pose.y
+    const c = Math.cos(this.pose.angle), s = Math.sin(this.pose.angle)
+    return { x: dx * c + dy * s, y: -dx * s + dy * c }
+  }
+
+  private hits(point: Point) {
+    const local = this.local(point)
+    const half = this.size / 2 + 10
+    return Math.abs(local.x) <= half && Math.abs(local.y) <= half
+  }
+
+  private updateContact() {
+    this.contact = this.hits(this.pressure)
+    const local = this.local(this.pressure)
+    const x = (local.x / this.size + .5) * DESIGN_SIZE
+    const y = (local.y / this.size + .5) * DESIGN_SIZE
+    const ctx = this.contactCtx
+    ctx.clearRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.drawImage(this.mask, 0, 0)
+    // Only nearby rubber touches the paper. Distant edges receive no ink.
+    const field = ctx.createRadialGradient(x, y, 0, x, y, DESIGN_SIZE * .56)
+    field.addColorStop(0, 'rgba(0,0,0,1)')
+    field.addColorStop(.2, 'rgba(0,0,0,.96)')
+    field.addColorStop(.55, 'rgba(0,0,0,.5)')
+    field.addColorStop(.85, 'rgba(0,0,0,.08)')
+    field.addColorStop(1, 'rgba(0,0,0,0)')
+    ctx.globalCompositeOperation = 'destination-in'
+    ctx.fillStyle = field
+    ctx.fillRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
+    ctx.globalCompositeOperation = 'source-over'
+  }
+
+  private deposit(opacity: number) {
+    if (!this.contact || opacity <= 0) return
     this.ctx.save()
-    this.ctx.translate(pose.x, pose.y)
-    this.ctx.rotate(pose.angle)
+    this.ctx.translate(this.pose.x, this.pose.y)
+    this.ctx.rotate(this.pose.angle)
     this.ctx.globalAlpha = opacity
-    this.ctx.drawImage(this.mask, -this.size / 2, -this.size / 2, this.size, this.size)
+    this.ctx.drawImage(this.contactMask, -this.size / 2, -this.size / 2, this.size, this.size)
+    // Very low-alpha repeated deposits can quantize RGB toward black. Keep the
+    // accumulated coverage, then restore the intended ink color within this face.
+    this.ctx.beginPath()
+    this.ctx.rect(-this.size / 2, -this.size / 2, this.size, this.size)
+    this.ctx.clip()
+    this.ctx.globalAlpha = 1
+    this.ctx.globalCompositeOperation = 'source-in'
+    this.ctx.fillStyle = INK
+    this.ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size)
     this.ctx.restore()
   }
-  private travel(next: Pose) {
-    const previous = this.pose
-    if (this.isPressed) {
-      const { steps, alpha } = sweep(previous, next, this.size)
-      for (let i = 1; i <= steps; i++) {
-        const t = i / steps
-        this.deposit({
-          x: previous.x + (next.x - previous.x) * t,
-          y: previous.y + (next.y - previous.y) * t,
-          angle: previous.angle + (next.angle - previous.angle) * t,
-        }, alpha)
-      }
+
+  private turn(rotation: number) {
+    const steps = Math.max(1, Math.ceil(Math.abs(rotation) / .035))
+    const alpha = -Math.expm1(-Math.abs(rotation) * .7 / steps)
+    for (let i = 0; i < steps; i++) {
+      this.pose.angle += rotation / steps
+      this.updateContact()
+      this.deposit(alpha)
     }
-    this.pose = next
+    // Normalize only after the interpolated turn so the next turn takes the short path.
+    this.pose.angle %= Math.PI * 2
     this.preview()
   }
+
   private down = (e: PointerEvent) => {
-    if (!this.enabled || e.button !== 0 || this.isPressed) return
+    if (!this.enabled || e.button !== 0 || this.pointer !== null) return
     e.preventDefault()
     this.overlay.focus({ preventScroll: true })
-    this.snapshot()
+    const point = pointOn(this.overlay, e)
+    this.hover = point
+    this.visible = true
     this.pointer = e.pointerId
     this.overlay.setPointerCapture(e.pointerId)
-    this.pose = { ...pointOn(this.overlay, e), angle: this.pose.angle }
-    this.visible = true
-    this.deposit(this.pose, 0.16)
-    this.lastTime = performance.now()
-    this.frame = requestAnimationFrame(this.tick)
-    this.overlay.dataset.pressed = 'true'
-    this.changed()
+    if (!this.placed || !this.hits(point)) {
+      // The placement press never inks, even when held or moved before release.
+      this.pose = { ...point, angle: this.pose.angle }
+      this.placed = true
+      this.interaction = 'place'
+    } else {
+      this.snapshot()
+      this.interaction = 'pressure'
+      this.pressure = point
+      this.updateContact()
+      this.deposit(.2)
+      this.lastTime = performance.now()
+      this.frame = requestAnimationFrame(this.tick)
+    }
+    this.sync()
     this.preview()
   }
+
   private move = (e: PointerEvent) => {
-    if (!this.enabled || (this.isPressed && e.pointerId !== this.pointer)) return
+    if (!this.enabled || (this.pointer !== null && e.pointerId !== this.pointer)) return
+    const point = pointOn(this.overlay, e)
+    this.hover = point
     this.visible = true
-    const samples = e.getCoalescedEvents?.() ?? []
-    for (const sample of samples.length ? samples : [e]) {
-      this.travel({ ...pointOn(this.overlay, sample), angle: this.pose.angle })
+    if (this.isPressed) {
+      this.pressure = point
+      this.updateContact()
+    } else if (!this.placed) {
+      this.pose = { ...point, angle: this.pose.angle }
     }
+    // Moving a placed stamp's pressure point never moves its center or paints a trail.
+    this.preview()
   }
+
   private tick = (now: number) => {
     if (!this.isPressed) return
-    const dt = Math.min((now - this.lastTime) / 1000, 0.1)
+    const dt = Math.min((now - this.lastTime) / 1000, .1)
     this.lastTime = now
     const direction = Number(this.keys.has('ArrowRight')) - Number(this.keys.has('ArrowLeft'))
-    if (direction) this.travel({ ...this.pose, angle: this.pose.angle + direction * dt * 2.2 })
-    this.deposit(this.pose, -Math.expm1(-0.58 * dt))
+    if (direction) this.turn(direction * dt * 2.2)
+    this.deposit(-Math.expm1(-1.15 * dt))
     this.frame = requestAnimationFrame(this.tick)
   }
+
   private wheel = (e: WheelEvent) => {
     if (!this.enabled || !this.isPressed) return
     e.preventDefault()
     const units = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 500 : 1
-    // Limit extreme wheel bursts; preserve both directions and fine trackpad input.
-    const rotation = Math.max(-0.65, Math.min(0.65, e.deltaY * units * 0.006))
-    this.travel({ ...this.pose, angle: this.pose.angle + rotation })
+    this.turn(Math.max(-.65, Math.min(.65, e.deltaY * units * .006)))
   }
+
   private keydown = (e: KeyboardEvent) => {
-    if (!this.enabled || !this.isPressed || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return
-    e.preventDefault()
-    this.keys.add(e.key)
+    if (!this.enabled) return
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      this.lift()
+    } else if (this.isPressed && ['ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      e.preventDefault()
+      this.keys.add(e.key)
+    }
   }
   private keyup = (e: KeyboardEvent) => { this.keys.delete(e.key) }
-  private up = (e: PointerEvent) => {
-    if (e.pointerId !== this.pointer) return
-    const bounds = this.overlay.getBoundingClientRect()
-    this.visible = e.clientX >= bounds.left && e.clientX <= bounds.right && e.clientY >= bounds.top && e.clientY <= bounds.bottom && e.pointerType !== 'touch'
-    this.finish()
-  }
-  private leave = () => { if (!this.isPressed) { this.visible = false; this.preview() } }
-  private visibility = () => { if (document.hidden) this.finish() }
-  finish = () => {
-    const id = this.pointer
-    this.pointer = null
-    this.keys.clear()
-    cancelAnimationFrame(this.frame)
-    this.overlay.dataset.pressed = 'false'
-    if (id !== null) {
-      this.count++
-      if (this.overlay.hasPointerCapture(id)) this.overlay.releasePointerCapture(id)
-      this.changed()
-    }
+  private up = (e: PointerEvent) => { if (e.pointerId === this.pointer) this.finish() }
+  private leave = () => {
+    this.hover = null
+    if (this.pointer === null && !this.placed) this.visible = false
     this.preview()
   }
-  hide() { this.finish(); this.visible = false; this.preview() }
+  private visibility = () => { if (document.hidden) this.finish() }
+
+  finish = () => {
+    const id = this.pointer
+    const wasPressure = this.isPressed
+    this.pointer = null
+    this.interaction = null
+    this.keys.clear()
+    cancelAnimationFrame(this.frame)
+    if (id !== null && this.overlay.hasPointerCapture(id)) this.overlay.releasePointerCapture(id)
+    if (wasPressure) this.count++
+    this.sync()
+    this.preview()
+  }
+
+  lift() {
+    this.finish()
+    this.placed = false
+    this.visible = false
+    this.hover = null
+    this.sync()
+    this.preview()
+  }
+
+  hide() { this.lift() }
+
   preview() {
     const ctx = this.overlayCtx
     ctx.clearRect(0, 0, PAPER_WIDTH, PAPER_HEIGHT)
-    if (!this.visible || !this.enabled) return
+    this.overlay.style.cursor = this.isPressed ? 'none' : this.placed && this.hover && this.hits(this.hover) ? 'pointer' : 'crosshair'
+    if ((!this.visible && !this.placed) || !this.enabled) return
+    const local = this.local(this.isPressed ? this.pressure : this.pose)
+    const leanX = Math.max(-1, Math.min(1, local.x / (this.size / 2)))
+    const leanY = Math.max(-1, Math.min(1, local.y / (this.size / 2)))
+    const r = this.size / 2 + 10
     ctx.save()
     ctx.translate(this.pose.x, this.pose.y)
     ctx.rotate(this.pose.angle)
-    const scale = this.isPressed ? 1 : 1.045
-    ctx.scale(scale, scale)
-    ctx.globalAlpha = this.isPressed ? 0.15 : 0.45
-    if (!this.isPressed) { ctx.shadowColor = '#4b221f55'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 7 }
-    ctx.drawImage(this.mask, -this.size / 2, -this.size / 2, this.size, this.size)
+    if (this.isPressed && this.contact) ctx.transform(1, leanY * .018, leanX * .018, 1, 0, 0)
+    ctx.shadowColor = '#4b382c30'
+    ctx.shadowBlur = this.placed ? 5 : 15
+    ctx.shadowOffsetX = this.isPressed ? -leanX * 4 : 0
+    ctx.shadowOffsetY = this.isPressed ? 2 - leanY * 4 : this.placed ? 4 : 12
+    ctx.fillStyle = this.isPressed ? '#ddcbb111' : '#e0d2b91c'
+    ctx.strokeStyle = this.isPressed ? '#8b5942aa' : '#93796199'
+    ctx.lineWidth = this.placed ? 2.5 : 2
+    ctx.beginPath()
+    ctx.roundRect(-r, -r, r * 2, r * 2, 7)
+    ctx.fill()
+    ctx.stroke()
     ctx.shadowColor = 'transparent'
-    ctx.globalAlpha = this.isPressed ? 0.45 : 0.28
-    ctx.strokeStyle = INK
-    ctx.lineWidth = 1.5
-    const r = this.size / 2 + 10
-    const corner = 12
-    for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      ctx.beginPath(); ctx.moveTo(x * r, y * (r - corner)); ctx.lineTo(x * r, y * r); ctx.lineTo(x * (r - corner), y * r); ctx.stroke()
+    ctx.globalAlpha = this.placed ? .13 : .4
+    ctx.drawImage(this.mask, -this.size / 2, -this.size / 2, this.size, this.size)
+    ctx.globalAlpha = 1
+    // Grip marks distinguish the carrier from the ink image.
+    ctx.strokeStyle = '#9c826377'
+    ctx.lineWidth = 2
+    for (const side of [-1, 1]) {
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(i * 9, side * (r - 8)); ctx.lineTo(i * 9, side * (r - 14)); ctx.stroke()
+      }
+    }
+    if (this.isPressed && this.contact) {
+      const glow = ctx.createRadialGradient(local.x, local.y, 0, local.x, local.y, this.size * .42)
+      glow.addColorStop(0, '#a52d2b20'); glow.addColorStop(1, '#a52d2b00')
+      ctx.save()
+      ctx.beginPath(); ctx.rect(-r, -r, r * 2, r * 2); ctx.clip()
+      ctx.fillStyle = glow; ctx.fillRect(-r, -r, r * 2, r * 2)
+      ctx.restore()
+      ctx.strokeStyle = '#a52d2b99'
+      ctx.lineWidth = 2
+      ctx.beginPath(); ctx.arc(local.x, local.y, 13, 0, Math.PI * 2); ctx.stroke()
+      ctx.fillStyle = INK
+      ctx.beginPath(); ctx.arc(local.x, local.y, 3, 0, Math.PI * 2); ctx.fill()
     }
     ctx.restore()
+    if (!this.isPressed) {
+      ctx.save()
+      ctx.fillStyle = '#8f7b65'
+      ctx.font = '17px "DM Sans", sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(this.placed ? 'PRESS AROUND THE FACE' : 'CLICK TO PLACE', this.pose.x, this.pose.y + r + 34)
+      ctx.restore()
+    }
   }
+
   undo() {
-    if (this.isPressed) return
+    if (this.pointer !== null) return
     const entry = this.history.pop()
     if (!entry) return
     this.ctx.putImageData(entry.pixels, 0, 0)
     this.count = entry.count
-    this.changed()
+    this.sync()
   }
+
   clear() {
-    if (this.isPressed || this.count === 0) return
+    if (this.pointer !== null || this.count === 0) return
     this.snapshot()
     this.ctx.clearRect(0, 0, PAPER_WIDTH, PAPER_HEIGHT)
     this.count = 0
-    this.changed()
+    this.lift()
   }
   async exportPNG() {
     const output = makeCanvas(PAPER_WIDTH, PAPER_HEIGHT)

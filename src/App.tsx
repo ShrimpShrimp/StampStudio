@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DesignPad, StampEngine, context } from './canvas'
 
-type IconName = 'pen' | 'eraser' | 'undo' | 'clear' | 'arrow' | 'back' | 'download' | 'spark' | 'check'
+type IconName = 'pen' | 'eraser' | 'undo' | 'clear' | 'arrow' | 'back' | 'download' | 'spark' | 'check' | 'lift'
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
     pen: <><path d="m4 16-1 5 5-1L20 8a2.1 2.1 0 0 0-4-4L4 16Z" /><path d="m14 6 4 4M4 16l4 4" /></>,
@@ -13,24 +13,25 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     download: <><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5" /></>,
     spark: <><path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z" /></>,
     check: <path d="m5 12 4 4L19 6" />,
+    lift: <><path d="M12 16V3m-5 5 5-5 5 5M4 18v3h16v-3" /></>,
   }
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
 
 const gestures = [
-  { name: 'Tap', action: 'A light impression.', symbol: '↓' },
-  { name: 'Hold', action: 'Let the ink settle in.', symbol: '●' },
-  { name: 'Drag', action: 'Follow your own line.', symbol: '↝' },
-  { name: 'Twist', action: 'Hold + scroll to turn.', symbol: '↻' },
+  { name: 'Place', action: 'First click sets the center.', symbol: '⌖' },
+  { name: 'Press', action: 'Hold a part of the face.', symbol: '↓' },
+  { name: 'Rock', action: 'Work around the edges.', symbol: '↔' },
+  { name: 'Lift', action: 'Reveal it. Place another.', symbol: '↑' },
 ]
 
 export default function App() {
   const [stage, setStage] = useState<'design' | 'stamp'>('design')
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
   const [penWidth, setPenWidth] = useState(15)
-  const [stampSize, setStampSize] = useState(180)
+  const [stampSize, setStampSize] = useState(300)
   const [designState, setDesignState] = useState({ hasInk: false, canUndo: false })
-  const [paperState, setPaperState] = useState({ count: 0, canUndo: false, pressed: false })
+  const [paperState, setPaperState] = useState({ count: 0, canUndo: false, pressed: false, placed: false })
   const [notice, setNotice] = useState('')
   const [exporting, setExporting] = useState(false)
   const designCanvas = useRef<HTMLCanvasElement>(null)
@@ -57,7 +58,7 @@ export default function App() {
     designer.current = pad
     const engine = new StampEngine(paperCanvas.current!, cursorCanvas.current!, () => {
       const current = stamper.current
-      if (current) setPaperState({ count: current.count, canUndo: current.canUndo, pressed: current.isPressed })
+      if (current) setPaperState({ count: current.count, canUndo: current.canUndo, pressed: current.isPressed, placed: current.placed })
     })
     stamper.current = engine
     return () => { pad.destroy(); engine.destroy() }
@@ -85,6 +86,7 @@ export default function App() {
     if (!designer.current?.hasInk || designer.current.isDrawing) return
     stamper.current!.setStamp(designCanvas.current!)
     stamper.current!.enabled = true
+    stamper.current!.preview()
     setStage('stamp')
     window.requestAnimationFrame(() => {
       heading.current?.focus({ preventScroll: true })
@@ -167,24 +169,28 @@ export default function App() {
         <section className="stamp-stage stage" hidden={stage !== 'stamp'} aria-label="Make your mark">
           <div className="studio-title-row">
             <div><div className="eyebrow">ONE SYMBOL. SO MANY WAYS TO BE.</div><h1 ref={heading} tabIndex={-1}>Follow the <em>feeling.</em></h1></div>
-            <p>Press a little. Stay a while. Take a turn.<br />There’s no right way to leave your mark.</p>
+            <p>Place your stamp. Work the edges.<br />Lift it to see what you’ve left behind.</p>
           </div>
           <div className="studio-toolbar">
             <div className="original-stamp"><canvas ref={originalPreview} width="128" height="128" aria-label="Your original stamp" /><div><span className="small-label">YOUR ORIGINAL</span><button className="text-button" onClick={editStamp}><Icon name="pen" size={13} /> Edit stamp</button></div></div>
             <span className="toolbar-divider" />
-            <label className="size-control"><span>Stamp size</span><input type="range" min="90" max="360" step="10" value={stampSize} onChange={e => { const size = Number(e.target.value); setStampSize(size); stamper.current!.size = size; stamper.current!.preview() }} /><span className="size-value">{Math.round(stampSize / 18)}%</span></label>
+            <label className="size-control" title={paperState.placed ? 'Lift the stamp to change its size' : undefined}><span>Stamp size</span><input type="range" min="180" max="480" step="10" value={stampSize} disabled={paperState.placed} onChange={e => { const size = Number(e.target.value); setStampSize(size); stamper.current!.size = size; stamper.current!.preview() }} /><span className="size-value">{Math.round(stampSize / 18)}%</span></label>
             <div className="ink-swatch"><span /><span>Seal red</span></div>
             <div className="paper-actions"><button className="quiet-button" onClick={() => stamper.current?.undo()} disabled={!paperState.canUndo || paperState.pressed} title="Undo last gesture (⌘/Ctrl Z)"><Icon name="undo" /><span>Undo</span></button><button className="quiet-button" onClick={() => { stamper.current?.clear(); setNotice('A fresh sheet. Undo brings your marks back.') }} disabled={!paperState.count || paperState.pressed}><Icon name="clear" /><span>Clear</span></button><button className="primary-button export-button" onClick={exportArt} disabled={exporting || paperState.pressed}><Icon name="download" /><span>{exporting ? 'Saving…' : 'Save PNG'}</span></button></div>
+          </div>
+          <div className="contact-instructions" role="status" aria-live="polite">
+            <div><span className="contact-step">{paperState.placed ? '02' : '01'}</span><p><strong>{paperState.placed ? 'Now press the stamp.' : 'First, place your stamp.'}</strong><span>{paperState.placed ? 'Hold its face or edges to transfer ink there. Its center stays fixed.' : 'Click the paper to set its center. Placement leaves no ink.'}</span></p></div>
+            <button className="lift-button" onClick={() => stamper.current?.lift()} disabled={!paperState.placed || paperState.pressed}><Icon name="lift" size={16} /> Lift stamp <kbd>Esc</kbd></button>
           </div>
           <div className={`paper-frame ${paperState.pressed ? 'is-pressed' : ''}`}>
             <div className="paper-surface">
               <canvas ref={paperCanvas} className="paper-art" aria-label="Your stamped composition" />
-              <canvas ref={cursorCanvas} className="paper-cursor" tabIndex={0} aria-label="Stamping surface: press to stamp, hold to darken, drag to draw, and scroll or hold arrow keys while pressed to twist" aria-describedby="gesture-help" />
-              {paperState.count === 0 && !paperState.pressed && <div className="paper-placeholder" aria-hidden="true"><Icon name="spark" size={28} /><span>The paper is yours.</span><small>Press anywhere to make your first mark.</small></div>}
+              <canvas ref={cursorCanvas} className="paper-cursor" tabIndex={0} aria-label="Stamping surface: first click places the stamp; then press around its face to apply ink locally; scroll or hold arrow keys while pressed to twist; Escape lifts it" aria-describedby="gesture-help" />
+              {paperState.count === 0 && !paperState.placed && <div className="paper-placeholder" aria-hidden="true"><Icon name="spark" size={28} /><span>The paper is yours.</span><small>Click to place. Then press to leave your mark.</small></div>}
             </div>
           </div>
-          <div className="paper-caption"><span><span className={`status-dot ${paperState.pressed ? 'live' : ''}`} />{paperState.pressed ? 'Ink meets paper' : paperState.count ? `${paperState.count} ${paperState.count === 1 ? 'gesture' : 'gestures'}. Entirely yours.` : 'A fresh start'}</span><span>1800 × 1200 PX <span className="caption-separator">/</span> NOTHING TO GET RIGHT</span></div>
-          <div className="keyboard-hint">A little twist: hold the stamp down, then scroll. Or use <kbd>←</kbd> <kbd>→</kbd>.</div>
+          <div className="paper-caption"><span><span className={`status-dot ${paperState.pressed ? 'live' : ''}`} />{paperState.pressed ? 'Pressure becomes ink' : paperState.placed ? 'Stamp placed · work the edges' : paperState.count ? `${paperState.count} pressure ${paperState.count === 1 ? 'pass' : 'passes'}. Entirely yours.` : 'A fresh start'}</span><span>1800 × 1200 PX <span className="caption-separator">/</span> NOTHING TO GET RIGHT</span></div>
+          <div className="keyboard-hint">Twist while pressing: scroll or hold <kbd>←</kbd> <kbd>→</kbd>. Lift with <kbd>Esc</kbd>, or click elsewhere to place again.</div>
         </section>
 
         <section className="gesture-strip" id="gesture-help" aria-label="Four ways to make your mark">
