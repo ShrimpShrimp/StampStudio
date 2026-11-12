@@ -116,7 +116,7 @@ export default function App() {
   const saturation = Math.min(100, Math.round(desk.wetness * 100))
   const condition = desk.spoiled ? 'soaked' : desk.wetness >= .48 ? 'damp' : 'dry'
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${stage === 'stamp' ? 'desk-open' : ''}`}>
     <header className="site-header">
       <a className="brand" href="#" onClick={e => { e.preventDefault(); editStamp() }} aria-label="Make Your Mark — edit your stamp">
         <span className="brand-seal" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m6 23 5-15 5 12 5-12 5 15M8 27h16" /></svg></span>
@@ -188,7 +188,6 @@ export default function App() {
           </div>
           <div className="document-desk">
             <div className="desk-tab"><span className="status-dot" /> INCOMING / {String(desk.sheet).padStart(3, '0')}</div>
-            <span className="paperclip" aria-hidden="true" />
             <div className={`paper-frame ${desk.pressed ? 'is-pressed' : ''} ${desk.spoiled ? 'paper-spoiled' : ''}`}>
               <div className="paper-surface">
                 <canvas ref={documentCanvas} className="document-art" aria-label="Illustrated request form with a stamp-here area" />
