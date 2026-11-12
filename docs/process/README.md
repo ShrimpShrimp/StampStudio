@@ -57,3 +57,12 @@ The previous no-ink placement behavior is deliberately superseded. Landing immed
 The thresholds, contact radius, and texture distribution are a first attempt for hands-on review, not measured physical properties. Moisture does not automatically dry in this version. The nine updated integration tests passed locally, including immediate dark/thin patches, local gap filling, initial-drag sliding, idle and contact rotation, moisture/failure/recovery, export composition, and narrow layouts. Desktop paper sizing was adjusted after visual inspection so the target remains in view while wheel input is used for rotation.
 
 For the assignment's two-to-four evidence pieces, a useful selection is 01 (custom symbol), 04 (separated pressure), 05 (new context), and 06 (consequential ink). Earlier captures remain unchanged as development history.
+
+
+## Speed-sensitive ink transfer
+
+Further project-owner feedback: sliding looked too faint even when staying in place long enough to soak the sheet. They proposed that slower sliding and spinning should transfer more ink, while fast movement should leave lighter marks.
+
+The motion model now measures translation and angular rim speed using a shared response. Regular and slow slides deposit more ink than the previous version; rapid movement transfers less. When a sliding stamp stops, stale speed decays quickly, ink accumulates more strongly, and contact coverage shifts gradually to fill some dry areas. Moisture uses the same speed adjustment, keeping wetting consistent with contact.
+
+Three regression checks compare identical slow/fast paths, compare equal-angle slow/fast turns using an asymmetric mark, and confirm substantial visible ink buildup at a stopped slide's endpoint before soaking. The circular outline used by other tests saturated too quickly to make a useful comparison of rotational sweeps, so the rotation test uses an L-shaped symbol. These are automated checks, not participant observations.

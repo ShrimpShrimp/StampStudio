@@ -258,3 +258,84 @@ test('desktop and mobile layouts fit, with actual document desk evidence', async
     await page.screenshot({ path: 'docs/process/05-circular-workbench.jpg', fullPage: true, animations: 'disabled' })
   }
 })
+
+test('the same slide deposits more ink at a slow speed than a fast speed', async ({ page }, testInfo) => {
+  async function stroke(pause: number) {
+    await page.goto('./')
+    const { paper, b } = await studio(page)
+    await page.mouse.move(b.x + b.width * .15, b.y + b.height * .55)
+    await page.mouse.down()
+    for (let step = 1; step <= 24; step++) {
+      await page.mouse.move(b.x + b.width * (.15 + .7 * step / 24), b.y + b.height * .55)
+      if (pause) await page.waitForTimeout(pause)
+    }
+    await page.mouse.up()
+    if (process.env.CAPTURE_INK) {
+      await page.getByRole('button', { name: 'Lift stamp', exact: false }).click()
+      await page.screenshot({ path: testInfo.outputPath(pause ? 'slow-slide.png' : 'fast-slide.png'), animations: 'disabled' })
+    }
+    // Exclude the landing, where both speeds correctly get the same strong patches.
+    return paper.evaluate((node: HTMLCanvasElement) => {
+      const pixels = node.getContext('2d')!.getImageData(500, 400, 750, 500).data
+      let alpha = 0
+      for (let i = 3; i < pixels.length; i += 4) alpha += pixels[i]
+      return alpha
+    })
+  }
+  const fast = await stroke(0), slow = await stroke(50)
+  expect(slow).toBeGreaterThan(fast * 1.35)
+})
+
+test('the same turn deposits more ink when rotated slowly, with the same final angle', async ({ page }) => {
+  async function spin(pause: number) {
+    await page.goto('./')
+    // Use an asymmetric mark so turning sweeps new paper, rather than repeatedly
+    // saturating the same circular outline used by the other gesture tests.
+    const face = await box(page.getByLabel('Shape your personal stamp on the circular rubber face', { exact: true }))
+    await page.mouse.move(face.x + face.width * .32, face.y + face.height * .25)
+    await page.mouse.down()
+    await page.mouse.move(face.x + face.width * .38, face.y + face.height * .73, { steps: 8 })
+    await page.mouse.move(face.x + face.width * .73, face.y + face.height * .63, { steps: 8 })
+    await page.mouse.up()
+    await page.getByRole('button', { name: 'Use this stamp' }).click()
+    const cursor = page.getByLabel('Stamping surface:', { exact: false })
+    const paper = page.getByLabel('Your stamped composition', { exact: true })
+    const b = await box(cursor)
+    const p = await land(page, b)
+    await page.mouse.move(p.x, p.y)
+    await page.mouse.down()
+    for (let step = 0; step < 12; step++) {
+      await page.mouse.wheel(0, 60)
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
+      if (pause) await page.waitForTimeout(pause)
+    }
+    await page.mouse.up()
+    return { ink: (await stats(paper)).alpha, angle: Number(await cursor.getAttribute('data-angle')) }
+  }
+  const fast = await spin(0), slow = await spin(70)
+  expect(Math.abs(slow.angle - fast.angle)).toBeLessThanOrEqual(1)
+  expect(slow.ink).toBeGreaterThan(fast.ink * 1.15)
+})
+
+test('a sliding stamp that stops visibly builds a rich impression before the sheet soaks', async ({ page }) => {
+  const { paper, cursor, b } = await studio(page)
+  await page.mouse.move(b.x + b.width * .35, b.y + b.height * .55)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width * .6, b.y + b.height * .55)
+  await expect(cursor).toHaveAttribute('data-sliding', 'true')
+  const early = await stats(paper)
+  const endpointInk = () => paper.evaluate((node: HTMLCanvasElement) => {
+    const data = node.getContext('2d')!.getImageData(920, 500, 320, 320).data
+    let alpha = 0
+    for (let i = 3; i < data.length; i += 4) alpha += data[i]
+    return alpha
+  })
+  const earlyEndpoint = await endpointInk()
+  await expect(page.getByRole('progressbar', { name: 'Paper saturation' })).toHaveAttribute('aria-valuenow', /^(5\d|6\d)$/, { timeout: 6500 })
+  const settled = await stats(paper)
+  expect(settled.dark).toBeGreaterThan(early.dark * 1.5)
+  expect(await endpointInk()).toBeGreaterThan(earlyEndpoint * 1.3)
+  await expect(cursor).toHaveAttribute('data-condition', 'soaked', { timeout: 7000 })
+  await page.mouse.up()
+  await expect(cursor).toHaveAttribute('data-pressed', 'false')
+})

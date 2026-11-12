@@ -18,7 +18,7 @@ Open the printed URL, normally `http://127.0.0.1:5173/StampStudio/`.
 ```sh
 npm run build       # TypeScript checks and production build
 npm run preview     # Serve the production build locally
-npm test            # Nine browser integration tests
+npm test            # Twelve browser integration tests
 ```
 
 Local tests use installed Google Chrome. CI installs Playwright Chromium. To use bundled Chromium locally, install it with `npx playwright install chromium` and remove the local `channel` override in `playwright.config.ts`.
@@ -31,8 +31,8 @@ Shape a personal symbol inside the circular rubber face. **Carve** adds a line; 
 
 - **Tap to land:** a quick contact leaves a patchy impression immediately. Some regions can be strongly inked while others are thin or dry. Releasing anchors the stamp at that center.
 - **Rock:** press and hold parts of the placed face to fill dry patches locally. Moving during this contact changes pressure, not the stamp's center. Moving outside the face pauses transfer.
-- **Slide:** while the stamp is lifted, press and drag more than 8 screen pixels. The moving stamp leaves an uneven trail with varying contact across its face. Releasing places it at the endpoint, ready to rock. A drag that begins on an already placed stamp stays a pressure gesture.
-- **Turn:** scroll over the paper, use arrow keys with the paper active, or enter an angle. Rotation before contact deposits no ink. Rotation during contact transfers overlapping orientations.
+- **Slide:** while the stamp is lifted, press and drag more than 8 screen pixels. The moving stamp leaves an uneven trail with varying contact across its face. Slower movement leaves a heavier trail; fast movement leaves less ink. Stopping in sliding mode builds a rich, pooling impression before the sheet can soak. Releasing places it at the endpoint, ready to rock. A drag that begins on an already placed stamp stays a pressure gesture.
+- **Turn:** scroll over the paper, use arrow keys with the paper active, or enter an angle. Rotation before contact deposits no ink. Rotation during contact transfers overlapping orientations, with slower turns leaving more ink than rapid spins.
 - **Lift stamp / Escape:** reveal the impression and get ready to place or slide again. Clicking elsewhere also starts a new landing. Lift before changing stamp size.
 - **Watch the paper:** repeated or prolonged contact accumulates moisture locally. A dampness meter and spreading ink warn you before the paper soaks through. Concentrated contact takes roughly six seconds from dry paper to failure; distributed contacts accumulate less at any one spot. These are prototype tuning values, not a physical fluid simulation. There is no automatic drying in this version.
 - **Fresh document:** replace the spoiled or completed form while keeping your seal. Spoiling does not erase the result or immediately replace the sheet. Undo can restore the previous contact, moisture state, or document.
@@ -52,7 +52,7 @@ The Vite base is `/StampStudio/`. `.github/workflows/deploy.yml` checks types, b
 
 - React + TypeScript + Vite; Canvas 2D handles artwork and the illustrated document.
 - `src/canvas.ts` separates the original symbol, temporary contact masks, paper ink, moisture/diffusion, and the stamp carrier.
-- Landing masks use coherent patches of high/low coverage. Sliding blends a small deterministic bank of contact patterns along the path. Dwell and path deposits are time/distance weighted; fast movement is interpolated.
+- Landing masks use coherent patches of high/low coverage. Sliding blends a small deterministic bank of contact patterns along the path. Dwell and path deposits share a speed response based on stamp widths per second, including motion at the rim during rotation. Slow motion transfers more ink and moisture, fast motion transfers less, and stopping promptly restores full contact. Fast movement is interpolated. Sliding dwell gently shifts the uneven contact pattern as ink pools into dry regions.
 - Pressure uses a localized contact field. Rotation interpolates angles. Ink coverage accumulates without changing the underlying user symbol.
 - A small moisture grid tracks local absorption. A low-resolution diffusion layer softens ink in damp regions without modifying the original paper pixels. Undo snapshots include moisture and document state.
 - `src/document.ts` draws the simple illustrated form for both the live desk and PNG export.
@@ -61,6 +61,6 @@ The Vite base is `/StampStudio/`. `.github/workflows/deploy.yml` checks types, b
 
 ## Validation and process
 
-The nine browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout.
+The twelve browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout. Additional comparisons replay identical slides and asymmetric rotations at different speeds, and verify visible ink buildup before a stopped slide soaks the paper.
 
 See [`docs/process/README.md`](docs/process/README.md) for actual development captures and notes. They document implementation and project-owner feedback, not a participant study.

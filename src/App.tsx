@@ -183,7 +183,7 @@ export default function App() {
             </div>
           </div>
           <div className={`contact-instructions ${desk.spoiled ? 'spoiled' : ''}`} role="status" aria-live="polite">
-            <div><span className="contact-step">{desk.spoiled ? '!' : desk.sliding ? '↝' : desk.placed ? '02' : '01'}</span><p><strong>{desk.spoiled ? 'Oh dear. This one soaked through.' : desk.sliding ? 'Let it slide.' : desk.placed ? 'Work the edges. Then lift to reveal.' : 'A request is waiting for your seal.'}</strong><span>{desk.spoiled ? 'Too much ink in one spot. Undo the contact, or try a fresh document.' : desk.sliding ? 'The moving face leaves its own uneven trail. Release to set it down.' : desk.placed ? 'Press different parts of the face to fill in the dry patches.' : 'Tap to land a patchy mark. Or press and drag to slide the stamp.'}</span></p></div>
+            <div><span className="contact-step">{desk.spoiled ? '!' : desk.sliding ? '↝' : desk.placed ? '02' : '01'}</span><p><strong>{desk.spoiled ? 'Oh dear. This one soaked through.' : desk.sliding ? 'Let it slide.' : desk.placed ? 'Work the edges. Then lift to reveal.' : 'A request is waiting for your seal.'}</strong><span>{desk.spoiled ? 'Too much ink in one spot. Undo the contact, or try a fresh document.' : desk.sliding ? 'Slow leaves more ink; fast leaves less. Release to set it down.' : desk.placed ? 'Press different parts of the face to fill in the dry patches.' : 'Tap to land a patchy mark. Or press and drag to slide the stamp.'}</span></p></div>
             <button className="lift-button" onClick={() => stamper.current?.lift()} disabled={!desk.placed || desk.pressed || desk.spoiled}><Icon name="lift" size={16} /> Lift stamp <kbd>Esc</kbd></button>
           </div>
           <div className="document-desk">
@@ -200,7 +200,7 @@ export default function App() {
           </div>
           <div className={`paper-condition ${condition}`}>
             <div><span className="wet-label">{desk.spoiled ? 'Paper soaked through' : condition === 'damp' ? 'Getting damp — give it a lift' : 'Easy does it. Paper absorbs ink.'}</span><span className="wet-meter" role="progressbar" aria-label="Paper saturation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={saturation}><span style={{ width: `${saturation}%` }} /></span></div>
-            <span>{desk.spoiled ? 'A fresh sheet is one click away.' : 'Scroll over the paper to turn · ← → · Esc to lift'}</span>
+            <span>{desk.spoiled ? 'A fresh sheet is one click away.' : 'Scroll / ← → to turn. Slow moves leave more ink. Esc lifts.'}</span>
           </div>
         </div>
       </section>

@@ -171,6 +171,11 @@ export class StampEngine {
   private damageTime = 0
   private distance = 0
   private landing = 0
+  private settlePhase = 0
+  private slideSpeed = 0
+  private turnSpeed = 0
+  private lastSlideTime = 0
+  private lastTurnTime = 0
   private lastWetBucket = 0
   private keys = new Set<string>()
   private abort = new AbortController()
@@ -304,7 +309,7 @@ export class StampEngine {
     this.ctx.translate(this.pose.x, this.pose.y); this.ctx.rotate(this.pose.angle)
     this.ctx.globalAlpha = opacity
     if (patchy) {
-      const phase = this.landing + this.distance / (this.size * .38)
+      const phase = this.landing + this.distance / (this.size * .38) + this.settlePhase
       const index = Math.floor(phase), mix = phase - index
       const a = this.patches[index % this.patches.length]
       const b = this.patches[(index + 1) % this.patches.length]
@@ -389,30 +394,55 @@ export class StampEngine {
     this.damageTime = performance.now()
   }
 
+  // Speeds use stamp widths per second, including the rim's motion during a turn.
+  // Decay releases a stale velocity promptly when the user stops moving.
+  private motionSpeed(now: number, kind: 'slide' | 'turn') {
+    const speed = kind === 'slide' ? this.slideSpeed : this.turnSpeed
+    const last = kind === 'slide' ? this.lastSlideTime : this.lastTurnTime
+    return speed * Math.exp(-Math.max(0, (now - last) / 1000 - .025) / .08)
+  }
+
+  private transferFactor(speed: number) {
+    return .06 + .94 / (1 + Math.pow(speed / 1.8, 1.6))
+  }
+
   private slideTo(point: Point) {
+    const now = performance.now()
     const previous = { ...this.pose }
     const length = Math.hypot(point.x - previous.x, point.y - previous.y)
+    if (length === 0) return
+    const elapsed = Math.max(1 / 240, Math.min(.2, (now - this.lastSlideTime) / 1000))
+    this.slideSpeed = length / this.size / elapsed
+    this.lastSlideTime = now
+    const transfer = this.transferFactor(Math.hypot(this.slideSpeed, this.motionSpeed(now, 'turn')))
     const steps = Math.max(1, Math.ceil(length / (this.size * .045)))
-    const opacity = -Math.expm1(-length / this.size * 5 / steps)
+    const opacity = -Math.expm1(-length / this.size * 24 * transfer / steps)
     for (let i = 1; i <= steps; i++) {
       this.pose.x = previous.x + (point.x - previous.x) * i / steps
       this.pose.y = previous.y + (point.y - previous.y) * i / steps
       this.distance += length / steps
       this.deposit(opacity, true)
-      this.moisten(length / this.size * .035 / steps)
+      this.moisten(length / this.size * .035 * transfer / steps)
       if (this.spoiled) break
     }
   }
 
-  private turn(rotation: number) {
+  private turn(rotation: number, now = performance.now(), frameElapsed?: number) {
     if (this.spoiled) return
     const active = this.isPressed
+    let transfer = 1
+    if (active) {
+      const elapsed = Math.max(1 / 240, frameElapsed ?? Math.min(.2, (now - this.lastTurnTime) / 1000))
+      this.turnSpeed = Math.abs(rotation) * .5 / elapsed
+      this.lastTurnTime = now
+      transfer = this.transferFactor(Math.hypot(this.turnSpeed, this.isSliding ? this.motionSpeed(now, 'slide') : 0))
+    }
     const steps = active ? Math.max(1, Math.ceil(Math.abs(rotation) / .035)) : 1
     for (let i = 0; i < steps; i++) {
       this.pose.angle += rotation / steps
       if (active) {
         this.updateContact()
-        this.deposit(-Math.expm1(-Math.abs(rotation) * .65 / steps), this.interaction !== 'pressure')
+        this.deposit(-Math.expm1(-Math.abs(rotation) * 1.1 * transfer / steps), this.interaction !== 'pressure')
       }
     }
     this.pose.angle %= Math.PI * 2
@@ -424,6 +454,8 @@ export class StampEngine {
     if (!this.enabled || this.spoiled || e.button !== 0 || this.isPressed) return
     e.preventDefault(); this.overlay.focus({ preventScroll: true })
     const point = pointOn(this.overlay, e)
+    this.slideSpeed = this.turnSpeed = this.settlePhase = 0
+    this.lastSlideTime = this.lastTurnTime = performance.now()
     this.snapshot(); this.pointer = e.pointerId; this.overlay.setPointerCapture(e.pointerId)
     this.hover = point; this.visible = true; this.origin = point
     if (this.placed && this.hits(point)) {
@@ -458,12 +490,16 @@ export class StampEngine {
 
   private tick = (now: number) => {
     if (!this.isPressed || this.spoiled) return
-    const dt = Math.min((now - this.lastTime) / 1000, .1)
+    const dt = Math.max(0, Math.min((now - this.lastTime) / 1000, .1))
     this.lastTime = now
     const direction = Number(this.keys.has('ArrowRight')) - Number(this.keys.has('ArrowLeft'))
-    if (direction) this.turn(direction * dt * 2.2)
-    this.deposit(-Math.expm1(-(this.interaction === 'pressure' ? 1.3 : .5) * dt), this.interaction !== 'pressure')
-    this.moisten(dt * .17)
+    if (direction && dt > 0) this.turn(direction * dt * 2.2, now, dt)
+    const speed = Math.hypot(this.isSliding ? this.motionSpeed(now, 'slide') : 0, this.motionSpeed(now, 'turn'))
+    const transfer = this.transferFactor(speed)
+    if (this.isSliding) this.settlePhase += dt * .2 * transfer
+    const inkRate = this.isSliding ? 2.8 : 1.3
+    this.deposit(-Math.expm1(-inkRate * transfer * dt), this.interaction !== 'pressure')
+    this.moisten(dt * .17 * transfer)
     if (now - this.damageTime > 100) this.renderDamage()
     if (this.isPressed && !this.spoiled) this.frame = requestAnimationFrame(this.tick)
   }
@@ -494,6 +530,7 @@ export class StampEngine {
   finish = () => {
     const id = this.pointer
     this.pointer = null; this.interaction = null; this.keys.clear(); cancelAnimationFrame(this.frame)
+    this.slideSpeed = this.turnSpeed = 0
     if (id !== null) {
       this.count++
       if (!this.spoiled) this.placed = true
