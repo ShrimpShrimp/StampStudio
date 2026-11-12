@@ -2,281 +2,259 @@ import { expect, test, type Page, type Locator } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 async function box(locator: Locator) {
-  const bounds = await locator.boundingBox()
-  if (!bounds) throw new Error('Canvas is not visible')
-  return bounds
+  const b = await locator.boundingBox()
+  if (!b) throw new Error('Canvas is not visible')
+  return b
 }
-async function design(page: Page) {
-  const canvas = page.getByLabel('Draw your personal stamp here', { exact: true })
-  const b = await box(canvas)
-  // An asymmetric, hollow symbol, drawn using real pointer input.
-  await page.mouse.move(b.x + b.width * .24, b.y + b.height * .28)
-  await page.mouse.down()
-  await page.mouse.move(b.x + b.width * .72, b.y + b.height * .38, { steps: 10 })
-  await page.mouse.move(b.x + b.width * .4, b.y + b.height * .75, { steps: 10 })
-  await page.mouse.move(b.x + b.width * .24, b.y + b.height * .28, { steps: 10 })
-  await page.mouse.up()
-  return canvas
-}
-async function image(locator: Locator) {
-  return locator.evaluate((node: HTMLCanvasElement) => node.toDataURL())
-}
-async function pixels(locator: Locator) {
+async function image(locator: Locator) { return locator.evaluate((node: HTMLCanvasElement) => node.toDataURL()) }
+async function stats(locator: Locator) {
   return locator.evaluate((node: HTMLCanvasElement) => {
     const data = node.getContext('2d')!.getImageData(0, 0, node.width, node.height).data
-    let alpha = 0, area = 0, max = 0
+    let alpha = 0, area = 0, dark = 0, thin = 0
     for (let i = 3; i < data.length; i += 4) {
       alpha += data[i]
       if (data[i]) area++
-      max = Math.max(max, data[i])
+      if (data[i] >= 180) dark++
+      if (data[i] > 5 && data[i] < 90) thin++
     }
-    return { alpha, area, max }
+    return { alpha, area, dark, thin }
   })
 }
-async function studio(page: Page, frame = false) {
-  if (frame) {
-    const b = await box(page.getByLabel('Draw your personal stamp here', { exact: true }))
-    await page.mouse.move(b.x + b.width * .15, b.y + b.height * .15)
-    await page.mouse.down()
-    for (const [x, y] of [[.85, .15], [.85, .85], [.15, .85], [.15, .15]]) {
-      await page.mouse.move(b.x + b.width * x, b.y + b.height * y, { steps: 8 })
-    }
-    await page.mouse.up()
-  } else await design(page)
+async function design(page: Page) {
+  const canvas = page.getByLabel('Shape your personal stamp on the circular rubber face', { exact: true })
+  const b = await box(canvas)
+  await page.mouse.move(b.x + b.width * .82, b.y + b.height * .5)
+  await page.mouse.down()
+  for (let i = 1; i <= 40; i++) {
+    const angle = i / 40 * Math.PI * 2
+    await page.mouse.move(b.x + b.width * (.5 + Math.cos(angle) * .32), b.y + b.height * (.5 + Math.sin(angle) * .32))
+  }
+  await page.mouse.up()
+  return canvas
+}
+async function studio(page: Page) {
+  await design(page)
   await page.getByRole('button', { name: 'Use this stamp' }).click()
   const cursor = page.getByLabel('Stamping surface:', { exact: false })
   const paper = page.getByLabel('Your stamped composition', { exact: true })
   return { cursor, paper, b: await box(cursor) }
 }
+async function land(page: Page, b: { x: number; y: number; width: number; height: number }, fx = .7, fy = .7) {
+  const x = b.x + b.width * fx, y = b.y + b.height * fy
+  await page.mouse.click(x, y)
+  return { x, y, px: fx * 1800, py: fy * 1200, size: 320 * b.width / 1800 }
+}
 
 test.beforeEach(async ({ page }) => { await page.goto('./') })
 
-test('freehand design, eraser, undo, clear, and faithful transparent original', async ({ page }) => {
+test('circular rubber editor preserves the personal symbol, restore, undo, and width choices', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Use this stamp' })).toBeDisabled()
-  const canvas = await design(page)
-  const original = await image(canvas)
-  const originalPixels = await pixels(canvas)
+  const canvas = await design(page), original = await image(canvas)
+  const originalPixels = await stats(canvas), b = await box(canvas)
   expect(originalPixels.area).toBeGreaterThan(5000)
-  const b = await box(canvas)
-  await page.getByRole('button', { name: 'Erase', exact: true }).click()
-  await page.mouse.move(b.x + b.width * .42, b.y + b.height * .27)
+  await page.getByRole('button', { name: 'Bold carving tool', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Bold carving tool', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Restore', exact: true }).click()
+  await page.mouse.move(b.x + b.width * .75, b.y + b.height * .5)
   await page.mouse.down()
-  await page.mouse.move(b.x + b.width * .42, b.y + b.height * .45, { steps: 8 })
+  await page.mouse.move(b.x + b.width * .9, b.y + b.height * .5, { steps: 8 })
   await page.mouse.up()
-  expect((await pixels(canvas)).area).toBeLessThan(originalPixels.area)
-  await page.getByRole('button', { name: 'Undo drawing', exact: true }).click()
+  expect((await stats(canvas)).area).toBeLessThan(originalPixels.area)
+  await page.getByRole('button', { name: 'Undo shaping', exact: true }).click()
   expect(await image(canvas)).toBe(original)
-  await page.getByRole('button', { name: 'Clear drawing', exact: true }).click()
-  expect((await pixels(canvas)).area).toBe(0)
-  await expect(page.getByRole('button', { name: 'Use this stamp' })).toBeDisabled()
-  await page.getByRole('button', { name: 'Undo drawing', exact: true }).click()
+  await page.getByRole('button', { name: 'Clear stamp design', exact: true }).click()
+  expect((await stats(canvas)).area).toBe(0)
+  await page.getByRole('button', { name: 'Undo shaping', exact: true }).click()
   expect(await image(canvas)).toBe(original)
   await page.getByRole('button', { name: 'Use this stamp' }).click()
   await page.getByRole('button', { name: 'Edit stamp', exact: true }).click()
   expect(await image(canvas)).toBe(original)
 })
 
-async function place(page: Page, b: { x: number; y: number; width: number; height: number }, fx = .5, fy = .45) {
-  const x = b.x + b.width * fx, y = b.y + b.height * fy
-  await page.mouse.click(x, y)
-  return { x, y, size: 300 * b.width / 1800 }
-}
-
-async function sideInk(paper: Locator, side: 'left' | 'right') {
-  return paper.evaluate((node: HTMLCanvasElement, side) => {
-    const ctx = node.getContext('2d')!
-    // Default center: (900, 540), 300px stamp, frame sides at ±105px.
-    const x = side === 'left' ? 780 : 990
-    const data = ctx.getImageData(x, 505, 30, 70).data
-    let sum = 0
-    for (let i = 3; i < data.length; i += 4) sum += data[i]
-    return sum
-  }, side)
-}
-
-test('first press places a fixed stamp and never transfers ink, even if held or dragged', async ({ page }) => {
+test('a light landing leaves both strong and thin patches immediately, and remains anchored', async ({ page }) => {
   const { paper, cursor, b } = await studio(page)
-  const x = b.x + b.width * .5, y = b.y + b.height * .45
-  await page.mouse.move(x, y)
-  await page.mouse.down()
+  await land(page, b)
+  const ink = await stats(paper)
+  expect(ink.dark).toBeGreaterThan(50)
+  expect(ink.thin).toBeGreaterThan(50)
   await expect(cursor).toHaveAttribute('data-placed', 'true')
-  const placedImage = await image(cursor)
-  await page.waitForTimeout(350)
-  await page.mouse.move(x + 180, y + 80)
-  await page.mouse.up()
-  expect((await pixels(paper)).area).toBe(0)
-  expect(await image(cursor)).toBe(placedImage)
-  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
-  await expect(page.getByText('Now press the stamp.', { exact: true })).toBeVisible()
-  await expect(page.getByRole('slider', { name: /Stamp size/ })).toBeDisabled()
+  const placed = await image(cursor)
+  await page.mouse.move(b.x + b.width * .2, b.y + b.height * .2)
+  expect(await image(cursor)).toBe(placed)
+  await expect(page.getByRole('slider', { name: 'Stamp size', exact: true })).toBeDisabled()
   await page.getByRole('button', { name: 'Lift stamp', exact: false }).click()
   await expect(cursor).toHaveAttribute('data-placed', 'false')
-  await expect(page.getByRole('slider', { name: /Stamp size/ })).toBeEnabled()
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  expect((await stats(paper)).area).toBe(0)
 })
 
-test('edge pressure grows locally while held; pressing the opposite edge fills only that edge', async ({ page }) => {
-  const { paper, b } = await studio(page, true)
-  const p = await place(page, b)
-  await page.mouse.move(p.x - p.size * .35, p.y)
+test('pressing a dry area fills it locally and stops changing after release', async ({ page }) => {
+  const { paper, b } = await studio(page)
+  const p = await land(page, b)
+  const dry = await page.evaluate(({ px, py }) => {
+    const source = document.querySelector<HTMLCanvasElement>('canvas[aria-label^="Shape your personal"]')!
+    const target = document.querySelector<HTMLCanvasElement>('canvas[aria-label="Your stamped composition"]')!
+    const mask = source.getContext('2d')!.getImageData(0, 0, 512, 512).data
+    const ctx = target.getContext('2d')!
+    for (let y = 50; y < 462; y += 3) for (let x = 50; x < 462; x += 3) {
+      if (mask[(y * 512 + x) * 4 + 3] < 200) continue
+      const dx = (x / 512 - .5) * 320, dy = (y / 512 - .5) * 320
+      const alpha = ctx.getImageData(Math.round(px + dx), Math.round(py + dy), 1, 1).data[3]
+      if (alpha < 70) return { dx, dy }
+    }
+    throw new Error('The first impression had no dry area to work on')
+  }, p)
+  const sample = (dx: number, dy: number) => paper.evaluate((node: HTMLCanvasElement, point) => node.getContext('2d')!.getImageData(Math.round(point.x), Math.round(point.y), 1, 1).data[3], { x: p.px + dx, y: p.py + dy })
+  const before = await sample(dry.dx, dry.dy)
+  const farBefore = await sample(-dry.dx, -dry.dy)
+  await page.mouse.move(p.x + dry.dx * b.width / 1800, p.y + dry.dy * b.height / 1200)
   await page.mouse.down()
-  await page.waitForTimeout(250)
-  const early = await sideInk(paper, 'left')
-  await page.waitForTimeout(1000)
-  const left = await sideInk(paper, 'left')
-  expect(left).toBeGreaterThan(early * 1.4)
-  expect(await sideInk(paper, 'right')).toBe(0)
+  await page.waitForTimeout(300)
+  const early = await sample(dry.dx, dry.dy)
+  await page.waitForTimeout(700)
+  const later = await sample(dry.dx, dry.dy)
   await page.mouse.up()
-  const leftAfterRelease = await sideInk(paper, 'left')
+  expect(early).toBeGreaterThan(before)
+  expect(later).toBeGreaterThan(early)
+  expect(await sample(-dry.dx, -dry.dy)).toBe(farBefore)
   const released = await image(paper)
   await page.waitForTimeout(200)
   expect(await image(paper)).toBe(released)
-  await page.mouse.move(p.x + p.size * .35, p.y)
-  await page.mouse.down()
-  await page.waitForTimeout(800)
-  await page.mouse.up()
-  expect(await sideInk(paper, 'right')).toBeGreaterThan(1000)
-  expect(await sideInk(paper, 'left')).toBe(leftAfterRelease)
-  const colorDrift = await paper.evaluate((node: HTMLCanvasElement) => {
-    const data = node.getContext('2d')!.getImageData(0, 0, node.width, node.height).data
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] > 100 && [165, 45, 43].some((channel, c) => Math.abs(data[i + c] - channel) > 3)) return true
-    }
-    return false
-  })
-  expect(colorDrift).toBe(false)
-  await expect(page.getByLabel('Stamping surface:', { exact: false })).toHaveAttribute('data-placed', 'true')
 })
 
-test('moving pressure stays in one footprint; lift, undo, and clear retain the paper correctly', async ({ page }) => {
-  const { paper, cursor, b } = await studio(page, true)
-  const p = await place(page, b)
-  await page.mouse.move(p.x - p.size * .35, p.y)
-  await page.mouse.down()
-  await page.waitForTimeout(200)
-  await page.mouse.move(p.x + p.size * .35, p.y, { steps: 12 })
-  await page.waitForTimeout(200)
-  await page.mouse.move(p.x + p.size * 2, p.y)
-  const beforeOutside = await image(paper)
-  await page.waitForTimeout(200)
-  expect(await image(paper)).toBe(beforeOutside)
-  await page.mouse.up()
-  const outsideArea = await paper.evaluate((node: HTMLCanvasElement) => {
-    const data = node.getContext('2d')!.getImageData(1080, 0, 700, node.height).data
-    return data.some((v, i) => i % 4 === 3 && v > 0)
-  })
-  expect(outsideArea).toBe(false)
-  await expect(cursor).toHaveAttribute('data-placed', 'true')
-  await page.getByRole('button', { name: 'Lift stamp', exact: false }).click()
-  await expect(page.getByText('1 pressure pass. Entirely yours.')).toBeVisible()
-  const worked = await image(paper)
-  await page.getByRole('button', { name: 'Clear', exact: true }).click()
-  expect((await pixels(paper)).area).toBe(0)
-  await page.getByRole('button', { name: 'Undo', exact: true }).click()
-  expect(await image(paper)).toBe(worked)
-  await page.getByRole('button', { name: 'Undo', exact: true }).click()
-  expect((await pixels(paper)).area).toBe(0)
-})
-
-test('twisting transfers overlapping local ink; scrolling is captured only during pressure', async ({ page }) => {
+test('dragging from a lifted stamp makes a continuous uneven trail and undoes as one contact', async ({ page }) => {
   const { paper, cursor, b } = await studio(page)
-  const p = await place(page, b)
+  await page.mouse.move(b.x + b.width * .15, b.y + b.height * .55)
+  await page.mouse.down()
+  await page.mouse.move(b.x + b.width * .85, b.y + b.height * .55)
+  await expect(cursor).toHaveAttribute('data-sliding', 'true')
+  await page.mouse.up()
+  await expect(cursor).toHaveAttribute('data-placed', 'true')
+  const filledColumns = await paper.evaluate((node: HTMLCanvasElement) => {
+    const ctx = node.getContext('2d')!
+    let filled = 0, total = 0
+    for (let x = 350; x < 1450; x += 20) {
+      total++
+      if (ctx.getImageData(x, 0, 1, node.height).data.some((v, i) => i % 4 === 3 && v > 0)) filled++
+    }
+    return filled / total
+  })
+  expect(filledColumns).toBeGreaterThan(.9)
+  const ink = await stats(paper)
+  expect(ink.dark).toBeGreaterThan(50)
+  expect(ink.thin).toBeGreaterThan(50)
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  expect((await stats(paper)).area).toBe(0)
+  await expect(page.getByRole('progressbar', { name: 'Paper saturation' })).toHaveAttribute('aria-valuenow', '0')
+})
+
+test('rotation before contact uses wheel, arrows, and exact angle without depositing ink', async ({ page }) => {
+  const { paper, cursor, b } = await studio(page)
+  await page.mouse.move(b.x + b.width * .7, b.y + b.height * .7)
+  const blank = await image(paper), scroll = await page.evaluate(() => window.scrollY)
+  await page.mouse.wheel(0, 80)
+  await expect.poll(() => cursor.getAttribute('data-angle')).not.toBe('0')
+  expect(await image(paper)).toBe(blank)
+  expect(await page.evaluate(() => window.scrollY)).toBe(scroll)
+  await page.getByRole('spinbutton', { name: 'Stamp angle in degrees' }).fill('30')
+  await expect(cursor).toHaveAttribute('data-angle', '30')
+  await land(page, b)
+  const landed = await image(paper)
+  await cursor.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(cursor).toHaveAttribute('data-angle', '35')
+  await page.keyboard.press('ArrowLeft')
+  await expect(cursor).toHaveAttribute('data-angle', '30')
+  expect(await image(paper)).toBe(landed)
+})
+
+test('twisting during contact transfers additional ink and moving on a placed face does not slide', async ({ page }) => {
+  const { paper, cursor, b } = await studio(page)
+  const p = await land(page, b), before = await image(paper)
   await page.mouse.move(p.x, p.y)
   await page.mouse.down()
-  const before = await pixels(paper)
-  const scrollY = await page.evaluate(() => window.scrollY)
-  const cursorBefore = await image(cursor)
   await page.mouse.wheel(0, 100)
-  await expect.poll(() => image(cursor)).not.toBe(cursorBefore)
-  expect(await page.evaluate(() => window.scrollY)).toBe(scrollY)
-  const clockwise = await image(cursor)
+  await expect.poll(() => cursor.getAttribute('data-angle')).not.toBe('0')
+  const angle = await cursor.getAttribute('data-angle')
   await page.mouse.wheel(0, -80)
-  await expect.poll(() => image(cursor)).not.toBe(clockwise)
-  expect((await pixels(paper)).area).toBeGreaterThan(before.area * 1.1)
-  const beforeKeys = await image(cursor)
-  await page.keyboard.down('ArrowRight')
-  await page.waitForTimeout(350)
-  await page.keyboard.up('ArrowRight')
-  expect(await image(cursor)).not.toBe(beforeKeys)
-  await page.keyboard.down('ArrowLeft')
-  await page.waitForTimeout(250)
-  await page.keyboard.up('ArrowLeft')
+  await expect.poll(() => cursor.getAttribute('data-angle')).not.toBe(angle)
+  await page.mouse.move(p.x - p.size * .25, p.y)
+  await expect(cursor).toHaveAttribute('data-sliding', 'false')
   await page.mouse.up()
-  await expect(cursor).toHaveAttribute('data-pressed', 'false')
-  await expect(page.getByRole('button', { name: 'Save PNG', exact: true })).toBeEnabled()
+  expect(await image(paper)).not.toBe(before)
   await page.getByRole('button', { name: 'Undo', exact: true }).click()
-  expect((await pixels(paper)).area).toBe(0)
-  await page.mouse.wheel(0, 180)
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollY)
+  expect(await image(paper)).toBe(before)
+  await cursor.focus()
+  await page.keyboard.press('Escape')
+  await expect(cursor).toHaveAttribute('data-placed', 'false')
 })
 
-test('paper survives editing, export is opaque 1800×1200 PNG, pointer leaving is safe', async ({ page }) => {
+test('too much contact visibly dampens and spoils the paper; fresh document and undo recover it', async ({ page }) => {
   const { paper, cursor, b } = await studio(page)
-  const placed = await place(page, b)
-  await page.mouse.click(placed.x, placed.y)
-  const originalPaper = await image(paper)
+  const p = await land(page, b)
+  await page.mouse.move(p.x, p.y)
+  await page.mouse.down()
+  await expect(cursor).toHaveAttribute('data-condition', 'damp', { timeout: 6000 })
+  await expect(page.getByText('Getting damp — give it a lift', { exact: true })).toBeVisible()
+  expect((await stats(page.getByLabel('Paper moisture and ink seepage', { exact: true }))).area).toBeGreaterThan(0)
+  await expect(cursor).toHaveAttribute('data-condition', 'soaked', { timeout: 10000 })
+  await page.mouse.up()
+  await expect(cursor).toHaveAttribute('data-pressed', 'false')
+  await expect(page.getByText('Oh dear. This one soaked through.', { exact: true })).toBeVisible()
+  const spoiled = await image(paper)
+  if (process.env.CAPTURE_PROCESS) await page.screenshot({ path: 'docs/process/06-soaked-document.jpg', fullPage: true })
+  await page.mouse.click(p.x + 200, p.y)
+  expect(await image(paper)).toBe(spoiled)
+  await page.getByRole('button', { name: 'Fresh document', exact: true }).click()
+  await expect(cursor).toHaveAttribute('data-condition', 'dry')
+  expect((await stats(paper)).area).toBe(0)
+  await expect(page.getByRole('progressbar', { name: 'Paper saturation' })).toHaveAttribute('aria-valuenow', '0')
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  expect(await image(paper)).toBe(spoiled)
+  await expect(cursor).toHaveAttribute('data-condition', 'soaked')
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(cursor).toHaveAttribute('data-condition', 'dry')
+})
+
+test('export includes the form, ink and moisture, preserves editing, and excludes the stamp carrier', async ({ page }) => {
+  const { paper, b } = await studio(page)
+  await land(page, b)
+  const original = await image(paper)
   await page.getByRole('button', { name: 'Edit stamp', exact: true }).click()
   await page.getByRole('button', { name: 'Use this stamp' }).click()
-  expect(await image(paper)).toBe(originalPaper)
+  expect(await image(paper)).toBe(original)
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
-  const download = await downloadPromise
-  expect(download.suggestedFilename()).toBe('make-your-mark.png')
-  const path = await download.path()
-  const bytes = await readFile(path!)
-  expect(bytes.subarray(1, 4).toString()).toBe('PNG')
-  expect(bytes.readUInt32BE(16)).toBe(1800)
-  expect(bytes.readUInt32BE(20)).toBe(1200)
-  const corner = await page.evaluate(async (dataURL) => {
-    const img = new Image()
-    img.src = dataURL
-    await img.decode()
-    const output = document.createElement('canvas')
-    output.width = img.width; output.height = img.height
-    const ctx = output.getContext('2d')!
-    ctx.drawImage(img, 0, 0)
-    return [...ctx.getImageData(0, 0, 1, 1).data]
+  const download = await downloadPromise, bytes = await readFile((await download.path())!)
+  expect(bytes.readUInt32BE(16)).toBe(1800); expect(bytes.readUInt32BE(20)).toBe(1200)
+  const matches = await page.evaluate(async (dataURL) => {
+    const img = new Image(); img.src = dataURL; await img.decode()
+    const exported = document.createElement('canvas'), expected = document.createElement('canvas')
+    exported.width = expected.width = 1800; exported.height = expected.height = 1200
+    exported.getContext('2d')!.drawImage(img, 0, 0)
+    const ctx = expected.getContext('2d')!
+    for (const label of ['Illustrated request form with a stamp-here area', 'Paper moisture and ink seepage', 'Your stamped composition']) ctx.drawImage(document.querySelector<HTMLCanvasElement>(`canvas[aria-label="${label}"]`)!, 0, 0)
+    return exported.toDataURL() === expected.toDataURL()
   }, `data:image/png;base64,${bytes.toString('base64')}`)
-  expect(corner).toEqual([255, 253, 247, 255])
-  await place(page, b)
-  await page.mouse.move(placed.x, placed.y)
-  await page.mouse.down()
-  await page.mouse.move(b.x - 30, b.y + 40)
-  await page.mouse.up()
-  await expect(cursor).toHaveAttribute('data-pressed', 'false')
+  expect(matches).toBe(true)
 })
 
-test('desktop and narrow layouts have no horizontal overflow or inaccessible controls', async ({ page }) => {
+test('desktop and mobile layouts fit, with actual document desk evidence', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', e => errors.push(e.message))
   for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 900 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   }
-  await studio(page)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  const { b } = await studio(page)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await expect(page.getByRole('button', { name: 'Save PNG', exact: true })).toBeInViewport()
-  await expect(page.getByRole('button', { name: 'Edit stamp', exact: true })).toBeInViewport()
+  await land(page, b)
   expect(errors).toEqual([])
-})
-
-test('capture the revision: an incomplete contact and an impression worked around its edges', async ({ page }) => {
-  const { b } = await studio(page, true)
-  const partial = await place(page, b, .32, .5)
-  await page.mouse.move(partial.x - partial.size * .35, partial.y)
-  await page.mouse.down()
-  await page.waitForTimeout(450)
-  await page.mouse.up()
-  await page.getByRole('button', { name: 'Lift stamp', exact: false }).click()
-  const complete = await place(page, b, .68, .5)
-  for (const [dx, dy] of [[-.35, -.35], [0, -.35], [.35, -.35], [.35, 0], [.35, .35], [0, .35], [-.35, .35], [-.35, 0]]) {
-    await page.mouse.move(complete.x + complete.size * dx, complete.y + complete.size * dy)
-    await page.mouse.down()
-    await page.waitForTimeout(220)
-    await page.mouse.up()
-  }
-  await page.getByRole('button', { name: 'Lift stamp', exact: false }).click()
-  await expect(page.getByText('9 pressure passes. Entirely yours.')).toBeVisible()
+  await page.setViewportSize({ width: 1440, height: 1100 })
   if (process.env.CAPTURE_PROCESS) {
-    await page.screenshot({ path: 'docs/process/04-place-and-pressure.jpg', fullPage: true })
+    await page.screenshot({ path: 'docs/process/05-document-desk.jpg', fullPage: true, animations: 'disabled' })
+    await page.getByRole('button', { name: 'Edit stamp', exact: true }).click()
+    await page.screenshot({ path: 'docs/process/05-circular-workbench.jpg', fullPage: true, animations: 'disabled' })
   }
 })

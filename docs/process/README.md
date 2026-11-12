@@ -41,3 +41,19 @@ Validation: the revised browser suite checks placement without ink, anchored mov
 ## Next review
 
 Try placing, pressing around the edges, and lifting with a real mouse or trackpad. Assess whether the contact area is too broad or narrow, how long useful coverage takes, and whether the carrier communicates physical pressure clearly. Automated checks establish behavior, not how satisfying it feels.
+
+## 05 — The workbench and the review desk
+
+The project owner's next feedback addressed the drawing-pad presentation, requested optional inconsistent sliding and rotation before contact, and proposed a document context with over-inking failure. They also clarified that a light tap should transfer strong ink in some areas, not uniformly faint ink everywhere.
+
+`05-circular-workbench.jpg` and `05-document-desk.jpg` are actual browser captures of this revision. The editor now presents a circular rubber face, warm cut-line feedback, a rim, and compact shaping tools. The desk uses an illustrated form with wireframe text and a marked stamp area. The document illustration is generated with Canvas paths, typography, and blocks, rather than a downloaded reference image.
+
+The previous no-ink placement behavior is deliberately superseded. Landing immediately transfers a coherent patchwork of strong, thin, and dry regions. A short click places the face for later local pressure. An initial drag beyond an 8-pixel threshold slides it with changing contact patterns; subsequent movement on a placed face continues to rock it. Idle rotation changes orientation without ink transfer. An angle field supports deliberate alignment.
+
+## 06 — Paper can absorb too much
+
+`06-soaked-document.jpg` captures an actual failed document after sustained contact. The moisture grid first produces a visible damp halo and low-resolution ink diffusion, then marks the document as soaked through. Concentrated contact is riskier than distributing pressure around the face. The sheet remains available for export, undo, or explicit replacement; failure does not silently clear the participant's work.
+
+The thresholds, contact radius, and texture distribution are a first attempt for hands-on review, not measured physical properties. Moisture does not automatically dry in this version. The nine updated integration tests passed locally, including immediate dark/thin patches, local gap filling, initial-drag sliding, idle and contact rotation, moisture/failure/recovery, export composition, and narrow layouts. Desktop paper sizing was adjusted after visual inspection so the target remains in view while wheel input is used for rotation.
+
+For the assignment's two-to-four evidence pieces, a useful selection is 01 (custom symbol), 04 (separated pressure), 05 (new context), and 06 (consequential ink). Earlier captures remain unchanged as development history.
