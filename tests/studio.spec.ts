@@ -286,33 +286,42 @@ test('the same slide deposits more ink at a slow speed than a fast speed', async
   expect(slow).toBeGreaterThan(fast * 1.35)
 })
 
-test('the same turn deposits more ink when rotated slowly, with the same final angle', async ({ page }) => {
-  async function spin(pause: number) {
-    await page.goto('./')
-    // Use an asymmetric mark so turning sweeps new paper, rather than repeatedly
-    // saturating the same circular outline used by the other gesture tests.
-    const face = await box(page.getByLabel('Shape your personal stamp on the circular rubber face', { exact: true }))
-    await page.mouse.move(face.x + face.width * .32, face.y + face.height * .25)
-    await page.mouse.down()
-    await page.mouse.move(face.x + face.width * .38, face.y + face.height * .73, { steps: 8 })
-    await page.mouse.move(face.x + face.width * .73, face.y + face.height * .63, { steps: 8 })
-    await page.mouse.up()
-    await page.getByRole('button', { name: 'Use this stamp' }).click()
-    const cursor = page.getByLabel('Stamping surface:', { exact: false })
-    const paper = page.getByLabel('Your stamped composition', { exact: true })
-    const b = await box(cursor)
-    const p = await land(page, b)
-    await page.mouse.move(p.x, p.y)
-    await page.mouse.down()
-    for (let step = 0; step < 12; step++) {
-      await page.mouse.wheel(0, 60)
-      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())))
-      if (pause) await page.waitForTimeout(pause)
-    }
-    await page.mouse.up()
-    return { ink: (await stats(paper)).alpha, angle: Number(await cursor.getAttribute('data-angle')) }
+test('the same turn deposits more ink when rotated slowly, with the same final angle', async ({ browser }) => {
+  async function spin(interval: number) {
+    const session = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+    const page = await session.newPage()
+    try {
+      // Install before app timers exist. Pause only after loading and shaping, so
+      // wheel latency on a busy CI runner cannot change the requested turn speed.
+      const start = new Date('2026-11-12T00:00:00Z')
+      await page.clock.install({ time: start })
+      await page.goto('http://127.0.0.1:5173/StampStudio/')
+      const face = await box(page.getByLabel('Shape your personal stamp on the circular rubber face', { exact: true }))
+      await page.mouse.move(face.x + face.width * .32, face.y + face.height * .25)
+      await page.mouse.down()
+      await page.mouse.move(face.x + face.width * .38, face.y + face.height * .73, { steps: 8 })
+      await page.mouse.move(face.x + face.width * .73, face.y + face.height * .63, { steps: 8 })
+      await page.mouse.up()
+      await page.getByRole('button', { name: 'Use this stamp' }).click()
+      const cursor = page.getByLabel('Stamping surface:', { exact: false })
+      const paper = page.getByLabel('Your stamped composition', { exact: true })
+      const b = await box(cursor)
+      await page.clock.pauseAt(new Date(start.getTime() + 60_000))
+      const p = await land(page, b)
+      await page.mouse.move(p.x, p.y)
+      await page.mouse.down()
+      for (let step = 0; step < 12; step++) {
+        await page.clock.runFor(interval)
+        const before = await cursor.getAttribute('data-angle')
+        await page.mouse.wheel(0, 60)
+        await expect.poll(() => cursor.getAttribute('data-angle')).not.toBe(before)
+      }
+      await page.clock.runFor(16)
+      await page.mouse.up()
+      return { ink: (await stats(paper)).alpha, angle: Number(await cursor.getAttribute('data-angle')) }
+    } finally { await session.close() }
   }
-  const fast = await spin(0), slow = await spin(70)
+  const fast = await spin(16), slow = await spin(120)
   expect(Math.abs(slow.angle - fast.angle)).toBeLessThanOrEqual(1)
   expect(slow.ink).toBeGreaterThan(fast.ink * 1.15)
 })
