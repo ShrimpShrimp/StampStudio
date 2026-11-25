@@ -1,0 +1,30 @@
+{
+  "kind": "technical verification; no participants",
+  "date": "2026-11-25T06:58:23.149Z",
+  "project": "https://meawmkrqndgbmruqrkiy.supabase.co",
+  "contributions": [
+    {
+      "id": "febea4f2-20bf-446a-8231-2ee9c417f177",
+      "ink": "Ochre",
+      "note": "Technical T; second independent visitor."
+    },
+    {
+      "id": "9c3cc79a-d468-458a-af66-1757458e9acd",
+      "ink": "Indigo",
+      "note": "Technical T; deliberately lost response after acceptance."
+    }
+  ],
+  "checks": [
+    "Concurrent contributions from independent anonymous sessions both persisted.",
+    "An accepted submission with a lost response kept its exact local draft.",
+    "Retry reused the same contribution ID and added no duplicate.",
+    "Refresh recovered the pending draft and cleared it only after finding the committed layer.",
+    "A fresh visitor with no Auth session saw identical committed pixels.",
+    "Two separate browser storage contexts composed the same artwork.",
+    "Anonymous and authenticated clients could not read the backing table directly.",
+    "Unauthenticated submissions were rejected; no delete route exists."
+  ],
+  "status": "passed",
+  "totalBefore": 0,
+  "totalAfter": 2
+}

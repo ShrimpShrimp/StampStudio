@@ -4,11 +4,15 @@ The intervention preserves the DE2 stamp and changes the destination of its cons
 
 ## Status, November 25, 2026
 
-Implemented and tested locally: destination choice; public viewing without an account screen; the existing tactile engine on a shared 2400 × 1600 surface; four inks; local drafts; undo/discard of drafts only; explicit sharing; ordered independent layers; pan and zoom; refresh recovery; durable storage across server restarts; concurrent submissions; safe retries; file validation and submission caps. Personal Studio retains its document, saturation/failure behavior, and PNG export.
+The prototype is implemented, and hosted persistence is verified. The owner created **Make Your Mark DE3** in the **Leon Free** organization, region `us-east-1`; its project reference is `meawmkrqndgbmruqrkiy`. The two database migrations and `stamp-board` Edge Function are deployed, anonymous sign-ins are enabled, and the GitHub Pages build has the public project URL and publishable key configured.
 
-**Hosted persistence is pending.** The owner chose a new Supabase Free project and installed the plugin. Its project-management tools were not exposed to the active chat, and the CLI had no authenticated account. No hosted project was created, no hosted schema was applied, and no hosted data was written. The Edge Function passed a Deno type check, but Supabase deployment, RLS enforcement, anonymous Auth, and cross-device persistence still need live verification. The existing GitHub Pages release remains the DE2 experience until this branch is merged and deployed.
+The original Personal Studio retains its document, saturation/failure behavior, and PNG export. The shared board adds destination choice, public viewing, the same tactile engine on a 2400 × 1600 surface, four inks, private drafts, explicit sharing, ordered independent layers, pan/zoom, and safe retries. Shared marks cannot be erased through the application.
 
-The technical checks below are not participant testing. The owner will conduct the audience study.
+An opt-in hosted browser check passed against the real project: two independent anonymous sessions submitted concurrently; both marks remained; a lost response preserved the draft; retry reused the same ID; refresh recovered the pending state; and a fresh visitor without an Auth session saw identical pixels. Direct storage reads were denied to both anonymous and authenticated client credentials. Database inspection confirmed two contributions from two owners, RLS enabled, and no direct client table/RPC grants. See [the actual hosted test record](hosted-verification.json).
+
+The two indigo/ochre **T** marks on the public board are deliberate technical checks, not participant work. Their IDs are recorded in the test record. They were retained rather than clearing the artwork. The owner should identify them in the audience-study notes; early marks can influence placement decisions.
+
+No participant study has been conducted or invented. The owner will run the audience comparison.
 
 ## Run a durable local board
 
@@ -30,26 +34,29 @@ Open the printed URL. The header above the shared paper says **Local shared prev
 
 The personal document and stamp design are still in-memory. A recovered shared draft can be submitted or downloaded without redrawing its stamp, but continuing to stamp after refresh requires a new design. Undo history is not restored across refresh. Draft persistence can be unavailable in restricted/private browsers; an explicit warning and PNG download are provided.
 
-## Hosted setup — owner-approved new Free project
+## Hosted project and maintenance
 
-Keep the frontend on GitHub Pages. Supabase supplies Auth, Postgres, and one Edge Function. The frontend needs only a public project URL and publishable key. Never copy a service-role key, database password, or access token into a Vite variable, source file, chat message, or GitHub Pages artifact.
+Frontend: [Make Your Mark on GitHub Pages](https://shrimpshrimp.github.io/StampStudio/). Backend: [the owner's Supabase project](https://supabase.com/dashboard/project/meawmkrqndgbmruqrkiy). Keep this project for continuity; do not create a replacement or reset it while maintaining the artwork.
 
-1. Finish the Supabase connection so project tools are available, then create one project named `Make Your Mark DE3` in an owner-selected **Free** organization. Do not upgrade a plan or attach paid add-ons. If a paid organization is the only choice, stop and resolve that with the owner.
-2. Apply `supabase/migrations/20261125062237_stamp_board.sql` to this new project. The table enables RLS, denies direct anonymous/authenticated access, and gives the service role a single append-only submission function. Do not apply it to an unrelated existing project.
-3. Enable **Allow anonymous sign-ins** in Supabase Auth. Viewing does not create an Auth user. The browser silently starts a session only when sharing; no email, password, profile, or account form is added to the artwork.
-4. Deploy `supabase/functions/stamp-board/index.ts` as `stamp-board`, including `../_shared/validation.mjs`. Gateway JWT verification is disabled for this function because GET requests are public; the function explicitly checks the user's bearer token with `auth.getUser()` before accepting POST requests. Its service-role credentials are server environment values supplied by Supabase.
-5. Set the repository's GitHub Actions **variables** `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. These are public client configuration, not administrative credentials. Set the same values in ignored `.env.local` to verify the hosted project from a local frontend. Remove/leave unused `VITE_BOARD_API_URL`; Supabase takes precedence when configured.
-6. Perform the hosted acceptance checks below before merging/deploying the DE3 branch. The Pages workflow embeds the two public variables at build time. An environment change needs a rebuild.
+Supabase supplies Auth, Postgres, and one Edge Function. The frontend uses only the public project URL and publishable key. Never put a service-role key, database password, or access token in a Vite variable, source file, chat message, or Pages artifact.
 
-The current CLI help was checked during implementation. CLI v3 targets the local database by default, so use an explicit remote target. After the owner signs in with `supabase login`, the corresponding deployment commands are:
+The setup consists of:
+
+1. `supabase/migrations/20261125065342_stamp_board.sql`: table, sequence, bounds/color constraints, indexes, RLS, least-privilege service grants, and the transactional submission function.
+2. `supabase/migrations/20261125065645_deny_direct_client_access.sql`: an explicit restrictive deny policy for anonymous/authenticated clients, retained as defense in depth if grants or permissive policies are added later. Both filenames match the actual remote migration history.
+3. **Allow anonymous sign-ins** enabled in Auth. Viewing creates no Auth user; a session is started only when sharing. No email/password/profile form is added to the artwork. The project's default email provider remains enabled; the app does not use it.
+4. `supabase/functions/stamp-board/index.ts` deployed with `_shared/validation.mjs`. Function gateway JWT verification is disabled for public GET requests; every POST explicitly checks its bearer token with `auth.getUser()`. Server credentials come from Supabase's function environment. Routing accepts both the gateway-prefixed and function-relative URL forms.
+5. Repository Actions variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. They are public client configuration. A change to either requires a frontend rebuild. Ignored `.env.local` holds the same values for hosted development; it is not committed. The normal browser suite explicitly overrides these with empty values and always uses isolated local storage.
+
+For future changes, inspect the current schema and run Supabase advisors. Generate new migrations with `supabase migration new NAME`; do not edit an already-applied migration. The CLI v3 help was checked during setup. With an authenticated CLI, use an explicit remote target:
 
 ```sh
-supabase db push --remote=PROJECT_REF --dry-run
-supabase db push --remote=PROJECT_REF
-supabase functions deploy stamp-board --remote=PROJECT_REF --use-api --no-verify-jwt
+supabase db push --remote=meawmkrqndgbmruqrkiy --dry-run
+supabase db push --remote=meawmkrqndgbmruqrkiy
+supabase functions deploy stamp-board --remote=meawmkrqndgbmruqrkiy --use-api --no-verify-jwt
 ```
 
-Replace `PROJECT_REF` with the new project's actual reference. Review the dry run before applying. A database password may be required by the CLI; enter it through its secure prompt, not command arguments. The migration was generated with `supabase migration new stamp_board`. Do not use `--prune`, reset the database, or clear a shared board to test deployment. Run Supabase advisors after provisioning and address any access warnings.
+Review the dry run before applying. A database password may be required; use the secure prompt, not command arguments. Do not use `--prune`, reset the database, or clear the board to test deployment. The GitHub workflow tests pull requests and publishes only a successful `main` build.
 
 ## Why store independent rendered layers
 
@@ -69,7 +76,7 @@ Limits enforced by the server:
 - Standard non-interlaced RGBA PNG only. Validate signature, chunk lengths, checksums, dimensions, bounded decompression, scanline filters, nonempty ink, and the selected ink color. Compressed metadata and active formats such as SVG are rejected. Low-alpha RGB rounding from Canvas is tolerated.
 - Only four curated colors. Public metadata excludes the anonymous owner ID. No arbitrary text or HTML is rendered.
 
-The maximum encoded image payload across 512 full-size allowed submissions is approximately 171 MiB, before row/index overhead. This fits within the currently advertised 500 MB Free database allowance, but anonymous Auth and other database usage also count. Smaller actual stamp crops use much less. Free hosting has usage quotas and may pause after inactivity; check the project before testing and monitor database/function/egress usage. No paid resource was provisioned during this implementation.
+The maximum encoded image payload across 512 full-size allowed submissions is approximately 171 MiB, before row/index overhead. This fits within the currently advertised 500 MB Free database allowance, but anonymous Auth and other database usage also count. Smaller actual stamp crops use much less. Free hosting has usage quotas and may pause after inactivity; check the project before testing and monitor database/function/egress usage. The organization remains on Free; no paid add-on or upgrade was requested.
 
 Anonymous rate limits are modest spam resistance, not proof of a unique person: a determined visitor can start new sessions. The finite global cap bounds stored artwork, but request/egress abuse still needs provider controls. For a small supervised study, retain Auth's provider IP limits and observe usage. A wider public launch may require a challenge/rate limiter and a moderation process. This prototype has no participant deletion interface; an owner can use administrative tools if necessary, with explicit care for the shared artwork.
 
@@ -94,7 +101,7 @@ Verified locally:
 - The Edge Function passes `deno check supabase/functions/stamp-board/index.ts`.
 - A manual Chrome preview confirmed that a test seal could be drawn, stamped/slid in indigo, and committed to the local board.
 
-Hosted acceptance checks still required:
+Hosted acceptance checklist (completed for the initial prototype; repeat relevant checks after backend changes):
 
 1. Load the Pages URL without a prior session. Confirm viewing works without creating an Auth user or showing an account form.
 2. In browser A, make one small technical test contribution and share it. Record its ID and the time. Refresh and compare the pixels.
@@ -103,10 +110,22 @@ Hosted acceptance checks still required:
 5. Verify direct table reads/writes and submission RPC execution are denied to anonymous/authenticated client credentials. Verify public GET works, POST without a valid bearer token fails, and DELETE/PUT do not exist. Check Supabase advisors and logs.
 6. Confirm the production bundle contains no server credential and no local API endpoint. Return to Personal Studio and verify a stamped request form can still be saved.
 
-Keep technical test marks visibly distinguishable from participant work in the study log. Avoid automatically seeding the public artwork: early marks can influence audience behavior and should be an intentional experimental choice.
+Keep technical test marks distinguishable from participant work in the study log. This release intentionally retains two documented T marks from the hosted check. Do not describe them as earlier participant contributions.
 
 ## Process and audience testing
 
 See [process captures](evidence/README.md) and the [participant test guide](participant-test.md). These capture development decisions and actual technical checks. No participant feedback or engagement conclusion has been invented. The 250–350-word assignment rationale should be finalized after the owner has observations to reflect on.
 
-Actual process screenshots were captured November 25, 2026 with `CAPTURE_DE3_PROCESS=1 npm test -- tests/board.spec.ts`. This uses an isolated temporary local board and technical test marks; it does not seed the hosted artwork.
+Actual process screenshots were captured November 25, 2026 with `CAPTURE_DE3_PROCESS=1 npm test -- tests/board.spec.ts`. The first three captures use an isolated temporary local board. The fourth comes from the opt-in real hosted check and shows its two technical marks.
+
+## Opt-in hosted verification
+
+```sh
+ALLOW_HOSTED_WRITES=1 npm run test:hosted
+```
+
+This separate configuration uses `.env.local` and the real Supabase project. It adds **two permanent technical T marks**, so it is never part of ordinary CI and must be opted into deliberately. It records contribution IDs and assertions in `hosted-verification.json` and captures `evidence/04-hosted-cross-session.png`. Browser tracing is disabled to avoid saving live anonymous access tokens. It does not write account details or tokens to the report. Do not rerun it just to regenerate a screenshot; each fresh run contributes another pair of marks.
+
+At verification time, Supabase's security advisor had no table/RLS findings after the restrictive policy was applied. It later reported [leaked-password protection disabled](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection), a Pro-only feature shown in the dashboard. The application uses anonymous Auth and has no password-based visitor flow. The default email provider was left enabled after automatic approval review rejected an optional attempt to disable it as an unapproved change to sign-in functionality. No workaround was attempted. Review that provider separately if the owner later introduces email accounts.
+
+The performance advisor noted the owner/time index as [unused](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index) on the two-row board. It is retained for the per-owner submission-limit query as the board grows.

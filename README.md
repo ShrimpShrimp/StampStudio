@@ -4,7 +4,7 @@ A personal seal, an illustrated request form, and a shared surface. Shape a symb
 
 Built for Georgia Tech LMC 4730. DE2 explores Image and Identity; the DE3 prototype changes the audience's role from individual creator to contributor to a collective artwork.
 
-**DE3 status:** the board works against a durable local test server. Supabase schema, validation, and Edge Function are prepared, but the hosted project has not been provisioned or verified. Without hosted configuration, the production build explicitly disables sharing. See [DE3 setup and verification](docs/de3/README.md).
+**DE3 status:** Supabase persistence is configured and verified with independent visitor sessions, concurrent submissions, refresh recovery, and a lost-response retry. The frontend publishes through GitHub Pages. See [setup and verification](docs/de3/README.md).
 
 ## Run locally
 

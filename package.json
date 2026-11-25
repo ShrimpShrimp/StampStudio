@@ -11,6 +11,7 @@
     "test": "playwright test",
     "test:server": "node --test server/board.test.mjs",
     "check:function": "npx --yes deno@2.9.6 check supabase/functions/stamp-board/index.ts",
+    "test:hosted": "playwright test --config playwright.hosted.config.ts",
     "board:dev": "node server/board.mjs"
   },
   "dependencies": {

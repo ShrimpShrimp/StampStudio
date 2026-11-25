@@ -9,7 +9,7 @@ const publicRow = (row: Record<string, unknown>) => Object.fromEntries(fields.sp
 Deno.serve(async req => {
   try {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors })
-    const url = new URL(req.url), path = url.pathname.replace(/^\/stamp-board/, '')
+    const url = new URL(req.url), path = url.pathname.replace(/^\/(?:functions\/v1\/)?stamp-board(?=\/|$)/, '')
     if (req.method === 'GET' && path === '/contributions') {
       const after = Number(url.searchParams.get('after') ?? 0)
       if (!Number.isSafeInteger(after) || after < 0) throw new BoardError('Invalid page.')

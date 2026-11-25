@@ -13,8 +13,9 @@ create table public.stamp_contributions (
 );
 create index stamp_contributions_owner_time on public.stamp_contributions (owner_id, created_at);
 alter table public.stamp_contributions enable row level security;
-revoke all on public.stamp_contributions from anon, authenticated;
+revoke all on public.stamp_contributions from public, anon, authenticated, service_role;
 grant select, insert on public.stamp_contributions to service_role;
+revoke all on sequence public.stamp_contributions_sequence_seq from public, anon, authenticated, service_role;
 grant usage, select on sequence public.stamp_contributions_sequence_seq to service_role;
 
 create function public.submit_stamp_contribution(p_owner uuid, p_id uuid, p_x integer, p_y integer, p_width integer, p_height integer, p_color text, p_image text)
