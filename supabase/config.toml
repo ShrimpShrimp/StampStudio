@@ -1,0 +1,4 @@
+project_id = "stampstudio-de3"
+
+[functions.stamp-board]
+verify_jwt = false

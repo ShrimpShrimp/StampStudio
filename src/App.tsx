@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DesignPad, StampEngine, context } from './canvas'
+import GlobalBoard from './board/GlobalBoard'
 
 type IconName = 'pen' | 'eraser' | 'undo' | 'clear' | 'arrow' | 'back' | 'download' | 'spark' | 'check' | 'lift'
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -26,7 +27,9 @@ const gestures = [
 ]
 
 export default function App() {
-  const [stage, setStage] = useState<'design' | 'stamp'>('design')
+  const [stage, setStage] = useState<'design' | 'stamp' | 'board'>('design')
+  const [destination, setDestination] = useState<'personal' | 'board'>('personal')
+  const [stampVersion, setStampVersion] = useState(0)
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
   const [penWidth, setPenWidth] = useState(16)
   const [stampSize, setStampSize] = useState(320)
@@ -72,7 +75,7 @@ export default function App() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey && !(e.target instanceof HTMLInputElement)) {
         e.preventDefault()
         if (stage === 'design') designer.current?.undo()
-        else stamper.current?.undo()
+        else if (stage === 'stamp') stamper.current?.undo()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -85,8 +88,9 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [notice])
 
-  function useStamp() {
+  function useStamp(target = destination) {
     if (!designer.current?.hasInk || designer.current.isDrawing) return
+    if (target === 'board') { openBoard(); return }
     stamper.current!.setStamp(designCanvas.current!)
     stamper.current!.enabled = true
     stamper.current!.preview()
@@ -95,6 +99,12 @@ export default function App() {
       heading.current?.focus({ preventScroll: true })
       window.scrollTo({ top: 0, behavior: 'instant' })
     })
+  }
+  function openBoard() {
+    stamper.current?.hide()
+    if (stamper.current) stamper.current.enabled = false
+    setDestination('board'); setStampVersion(v => v + 1); setStage('board')
+    window.scrollTo({ top: 0, behavior: 'instant' })
   }
   function editStamp() {
     stamper.current?.hide()
@@ -116,7 +126,7 @@ export default function App() {
   const saturation = Math.min(100, Math.round(desk.wetness * 100))
   const condition = desk.spoiled ? 'soaked' : desk.wetness >= .48 ? 'damp' : 'dry'
 
-  return <div className={`app-shell ${stage === 'stamp' ? 'desk-open' : ''}`}>
+  return <div className={`app-shell ${stage === 'stamp' ? 'desk-open' : stage === 'board' ? 'board-open' : ''}`}>
     <header className="site-header">
       <a className="brand" href="#" onClick={e => { e.preventDefault(); editStamp() }} aria-label="Make Your Mark — edit your stamp">
         <span className="brand-seal" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m6 23 5-15 5 12 5-12 5 15M8 27h16" /></svg></span>
@@ -125,7 +135,8 @@ export default function App() {
       <nav className="steps" aria-label="Studio stages">
         <button className={`step ${stage === 'design' ? 'active' : 'complete'}`} onClick={editStamp} aria-current={stage === 'design' ? 'step' : undefined}><span className="step-number">01</span><span>Make your stamp</span></button>
         <span className="step-connector" />
-        <button className={`step ${stage === 'stamp' ? 'active' : ''}`} disabled={!designState.hasInk} onClick={useStamp} aria-current={stage === 'stamp' ? 'step' : undefined}><span className="step-number">02</span><span>Take the desk</span></button>
+        <button className={`step ${stage === 'stamp' ? 'active' : ''}`} disabled={!designState.hasInk} onClick={() => { setDestination('personal'); useStamp('personal') }} aria-current={stage === 'stamp' ? 'step' : undefined}><span className="step-number">02</span><span>Personal Studio</span></button>
+        <button className="board-nav-button" onClick={openBoard} aria-current={stage === 'board' ? 'page' : undefined}>Global Stamp Board</button>
       </nav>
     </header>
 
@@ -162,7 +173,8 @@ export default function App() {
               <button className="icon-button" onClick={() => designer.current?.clear()} disabled={!designState.hasInk} title="Start the stamp over" aria-label="Clear stamp design"><Icon name="clear" /></button>
             </div>
           </div>
-          <div className="design-next"><span id="drawing-hint">One seal. A desk full of possibilities.</span><button className="primary-button" onClick={useStamp} disabled={!designState.hasInk}>Use this stamp <Icon name="arrow" /></button></div>
+          <div className="destination-choice" role="group" aria-label="Where to take your stamp"><button aria-pressed={destination === 'personal'} onClick={() => setDestination('personal')}>Personal Studio</button><button aria-pressed={destination === 'board'} onClick={() => setDestination('board')}>Global Stamp Board</button></div>
+          <div className="design-next"><span id="drawing-hint">{destination === 'board' ? 'A personal mark. A shared surface.' : 'One seal. A desk full of possibilities.'}</span><button className="primary-button" onClick={() => useStamp()} disabled={!designState.hasInk}>Use this stamp <Icon name="arrow" /></button></div>
         </div>
       </section>
 
@@ -204,6 +216,8 @@ export default function App() {
           </div>
         </div>
       </section>
+
+      <GlobalBoard active={stage === 'board'} stamp={designState.hasInk ? designCanvas.current : null} version={stampVersion} onEdit={() => { setDestination('board'); editStamp() }} onPersonal={() => { setDestination('personal'); if (designState.hasInk) useStamp('personal'); else editStamp() }} />
 
       <section className="gesture-strip" id="gesture-help" aria-label="Ways to use your stamp">
         <div className="gesture-intro"><span className="eyebrow">ONE LITTLE SEAL.</span><span>A personal touch.</span></div>
