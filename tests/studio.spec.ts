@@ -295,7 +295,7 @@ test('the same turn deposits more ink when rotated slowly, with the same final a
       // wheel latency on a busy CI runner cannot change the requested turn speed.
       const start = new Date('2026-11-12T00:00:00Z')
       await page.clock.install({ time: start })
-      await page.goto('http://127.0.0.1:5173/StampStudio/')
+      await page.goto('./')
       const face = await box(page.getByLabel('Shape your personal stamp on the circular rubber face', { exact: true }))
       await page.mouse.move(face.x + face.width * .32, face.y + face.height * .25)
       await page.mouse.down()

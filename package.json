@@ -8,9 +8,14 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:server": "node --test server/board.test.mjs",
+    "check:function": "npx --yes deno@2.9.6 check supabase/functions/stamp-board/index.ts",
+    "test:hosted": "playwright test --config playwright.hosted.config.ts",
+    "board:dev": "node server/board.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.119.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

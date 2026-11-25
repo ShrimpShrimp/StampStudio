@@ -1,12 +1,14 @@
 # Make Your Mark
 
-A personal seal, an illustrated request form, and just enough ink to get into trouble. Shape a symbol on a circular rubber face, then land, rock, slide, and rotate it on a little document-review desk.
+A personal seal, an illustrated request form, and a shared surface. Shape a symbol on a circular rubber face, then land, rock, slide, and rotate it in the Personal Studio or draft a contribution to the Global Stamp Board.
 
-Built for Georgia Tech LMC 4730, Design Experiment 2 — Image and Identity.
+Built for Georgia Tech LMC 4730. DE2 explores Image and Identity; the DE3 prototype changes the audience's role from individual creator to contributor to a collective artwork.
+
+**DE3 status:** Supabase persistence is configured and verified with independent visitor sessions, concurrent submissions, refresh recovery, and a lost-response retry. The frontend publishes through GitHub Pages. See [setup and verification](docs/de3/README.md).
 
 ## Run locally
 
-Requires Node.js 22.12+; Node 24 is used for deployment.
+Requires Node.js 24 for the local shared-board server and tests.
 
 ```sh
 npm ci
@@ -18,7 +20,8 @@ Open the printed URL, normally `http://127.0.0.1:5173/StampStudio/`.
 ```sh
 npm run build       # TypeScript checks and production build
 npm run preview     # Serve the production build locally
-npm test            # Twelve browser integration tests
+npm test            # Seventeen browser integration tests, with isolated shared storage
+npm run test:server # Four storage and validation tests
 ```
 
 Local tests use installed Google Chrome. CI installs Playwright Chromium. To use bundled Chromium locally, install it with `npx playwright install chromium` and remove the local `channel` override in `playwright.config.ts`.
@@ -40,7 +43,15 @@ Shape a personal symbol inside the circular rubber face. **Carve** adds a line; 
 
 ⌘Z / Ctrl+Z undoes a shaping stroke or an entire landing/pressure/slide gesture. Drawing history keeps 30 actions; document history keeps 10 to bound memory.
 
-Editing the seal preserves the current document. Work lives in this tab's memory; refreshing or closing resets it. Export before leaving. No artwork is uploaded, and there is no backend, account, or analytics.
+Editing the seal preserves the current personal document. Personal Studio work lives in this tab's memory; refreshing or closing resets it. Export before leaving. Personal artwork is never submitted to the shared board automatically.
+
+## On the shared board
+
+Browse without making a stamp or signing in. The finite 2400 × 1600 surface has four inks, fit/zoom controls, and a move mode. The same stamp engine handles landing, rocking, sliding, and rotation. Shared paper does not soak through: one participant cannot spoil everyone else's surface. The original document still does.
+
+Marks stay in a separate private draft until **Leave my mark**. Undo and discard affect only that draft. Completed contacts are saved in this browser's IndexedDB, with a download option; the stamp design itself still lives in memory. Submitted contributions become independent, immutable transparent layers ordered by the server. A lost response preserves the exact pending submission so a retry cannot duplicate it. The board checks for new contributions every 15 seconds and on manual refresh.
+
+To try shared persistence locally, copy `.env.example` to `.env.local`, start `npm run board:dev` in one terminal and `npm run dev` in another. The board says **Local shared preview**; its SQLite database lives in ignored `.local/`. This is a development backend, not public hosting. Production ignores the local backend URL and uses the configured Supabase project only.
 
 ## GitHub Pages
 
@@ -61,6 +72,6 @@ The Vite base is `/StampStudio/`. `.github/workflows/deploy.yml` checks types, b
 
 ## Validation and process
 
-The twelve browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout. Additional comparisons replay identical slides and asymmetric rotations at different speeds, and verify visible ink buildup before a stopped slide soaks the paper.
+The original twelve browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout. Additional comparisons replay identical slides and asymmetric rotations at different speeds, and verify visible ink buildup before a stopped slide soaks the paper. Five DE3 browser tests exercise independent browsers, concurrent commits, refresh recovery, failed-response retries, draft isolation, color/pressure/slide preservation, and pan/zoom on desktop and mobile. Four server tests check durable storage, append-only routes, authorization, safe PNG handling, idempotency, and atomic limits.
 
 See [`docs/process/README.md`](docs/process/README.md) for actual development captures and notes. They document implementation and project-owner feedback, not a participant study.

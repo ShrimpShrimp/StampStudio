@@ -193,27 +193,36 @@ export class StampEngine {
     readonly background: HTMLCanvasElement,
     readonly damage: HTMLCanvasElement,
     private changed: () => void,
+    readonly options: { shared?: boolean; width?: number; height?: number; ink?: string; background?: (ctx: CanvasRenderingContext2D) => void } = {},
   ) {
     for (const canvas of [paper, overlay, background, damage]) {
-      canvas.width = PAPER_WIDTH; canvas.height = PAPER_HEIGHT
+      canvas.width = this.width; canvas.height = this.height
     }
     this.ctx = context(paper)
     this.overlayCtx = context(overlay)
     this.damageCtx = context(damage)
-    drawDocument(context(background), this.sheet)
-    const options = { signal: this.abort.signal }
-    overlay.addEventListener('pointerdown', this.down, options)
-    overlay.addEventListener('pointermove', this.move, options)
-    overlay.addEventListener('pointerup', this.up, options)
-    overlay.addEventListener('pointercancel', this.up, options)
-    overlay.addEventListener('lostpointercapture', this.up, options)
-    overlay.addEventListener('pointerleave', this.leave, options)
-    overlay.addEventListener('wheel', this.wheel, { ...options, passive: false })
-    window.addEventListener('keydown', this.keydown, options)
-    window.addEventListener('keyup', this.keyup, options)
-    window.addEventListener('blur', this.finish, options)
-    document.addEventListener('visibilitychange', this.visibility, options)
+    this.drawBackground()
+    const listeners = { signal: this.abort.signal }
+    overlay.addEventListener('pointerdown', this.down, listeners)
+    overlay.addEventListener('pointermove', this.move, listeners)
+    overlay.addEventListener('pointerup', this.up, listeners)
+    overlay.addEventListener('pointercancel', this.up, listeners)
+    overlay.addEventListener('lostpointercapture', this.up, listeners)
+    overlay.addEventListener('pointerleave', this.leave, listeners)
+    overlay.addEventListener('wheel', this.wheel, { ...listeners, passive: false })
+    window.addEventListener('keydown', this.keydown, listeners)
+    window.addEventListener('keyup', this.keyup, listeners)
+    window.addEventListener('blur', this.finish, listeners)
+    document.addEventListener('visibilitychange', this.visibility, listeners)
     this.sync()
+  }
+
+  get width() { return this.options.width ?? PAPER_WIDTH }
+  get height() { return this.options.height ?? PAPER_HEIGHT }
+  private get ink() { return this.options.ink ?? INK }
+  private drawBackground() {
+    if (this.options.background) this.options.background(context(this.background))
+    else drawDocument(context(this.background), this.sheet)
   }
 
   get canUndo() { return this.history.length > 0 }
@@ -236,7 +245,7 @@ export class StampEngine {
     ctx.globalCompositeOperation = 'source-over'
     ctx.drawImage(original, 0, 0)
     ctx.globalCompositeOperation = 'source-in'
-    ctx.fillStyle = INK; ctx.fillRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
+    ctx.fillStyle = this.ink; ctx.fillRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
     ctx.globalCompositeOperation = 'destination-out'
     ctx.fillStyle = 'rgba(0,0,0,.25)'
     let seed = 713
@@ -277,8 +286,8 @@ export class StampEngine {
   }
 
   private snapshot() {
-    this.history.push({ pixels: this.ctx.getImageData(0, 0, PAPER_WIDTH, PAPER_HEIGHT), wet: this.wet.slice(), count: this.count, sheet: this.sheet, spoiled: this.spoiled })
-    if (this.history.length > 10) this.history.shift()
+    this.history.push({ pixels: this.ctx.getImageData(0, 0, this.width, this.height), wet: this.wet.slice(), count: this.count, sheet: this.sheet, spoiled: this.spoiled })
+    if (this.history.length > (this.options.shared ? 4 : 10)) this.history.shift()
   }
 
   private local(point: Point): Point {
@@ -324,16 +333,17 @@ export class StampEngine {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0)
     const r = this.size * .74 + 3
     this.ctx.beginPath(); this.ctx.rect(this.pose.x - r, this.pose.y - r, r * 2, r * 2); this.ctx.clip()
-    this.ctx.globalAlpha = 1; this.ctx.globalCompositeOperation = 'source-in'; this.ctx.fillStyle = INK
+    this.ctx.globalAlpha = 1; this.ctx.globalCompositeOperation = 'source-in'; this.ctx.fillStyle = this.ink
     this.ctx.fillRect(this.pose.x - r - 2, this.pose.y - r - 2, r * 2 + 4, r * 2 + 4)
     this.ctx.restore()
   }
 
   private moisten(amount: number) {
+    if (this.options.shared) return
     if (this.spoiled || (this.interaction === 'pressure' && !this.contact)) return
     const point = this.interaction === 'pressure' ? this.pressure : this.pose
     const radius = this.size * .42
-    const cellX = PAPER_WIDTH / WET_COLS, cellY = PAPER_HEIGHT / WET_ROWS
+    const cellX = this.width / WET_COLS, cellY = this.height / WET_ROWS
     const minX = Math.max(0, Math.floor((point.x - radius) / cellX)), maxX = Math.min(WET_COLS - 1, Math.ceil((point.x + radius) / cellX))
     const minY = Math.max(0, Math.floor((point.y - radius) / cellY)), maxY = Math.min(WET_ROWS - 1, Math.ceil((point.y + radius) / cellY))
     for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
@@ -355,7 +365,8 @@ export class StampEngine {
 
   private renderDamage() {
     const ctx = this.damageCtx
-    ctx.clearRect(0, 0, PAPER_WIDTH, PAPER_HEIGHT)
+    ctx.clearRect(0, 0, this.width, this.height)
+    if (this.options.shared) return
     if (this.wetness >= .3) {
       // Low-resolution diffusion keeps the live bleed inexpensive. The moisture
       // field confines it to damp areas, and the original artwork stays intact.
@@ -373,12 +384,12 @@ export class StampEngine {
       bleed.globalCompositeOperation = 'destination-in'
       bleed.drawImage(this.moisture, 0, 0, 450, 300)
       bleed.globalCompositeOperation = 'source-over'
-      ctx.drawImage(this.bleed, 0, 0, PAPER_WIDTH, PAPER_HEIGHT)
+      ctx.drawImage(this.bleed, 0, 0, this.width, this.height)
     }
     for (let y = 0; y < WET_ROWS; y++) for (let x = 0; x < WET_COLS; x++) {
       const wet = this.wet[y * WET_COLS + x]
       if (wet < .42) continue
-      const cx = (x + .5) * PAPER_WIDTH / WET_COLS, cy = (y + .5) * PAPER_HEIGHT / WET_ROWS
+      const cx = (x + .5) * this.width / WET_COLS, cy = (y + .5) * this.height / WET_ROWS
       const radius = 20 + wet * 23
       const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
       halo.addColorStop(0, `rgba(130,65,53,${Math.min(.13, (wet - .42) * .13)})`)
@@ -477,7 +488,7 @@ export class StampEngine {
     const point = pointOn(this.overlay, e)
     this.hover = point; this.visible = true
     if (this.interaction === 'landing') {
-      const scale = this.overlay.getBoundingClientRect().width / PAPER_WIDTH
+      const scale = this.overlay.getBoundingClientRect().width / this.width
       if (Math.hypot(point.x - this.origin.x, point.y - this.origin.y) * scale > 8) {
         this.interaction = 'slide'; this.placed = false; this.sync()
         this.slideTo(point)
@@ -543,7 +554,7 @@ export class StampEngine {
 
   preview() {
     const ctx = this.overlayCtx
-    ctx.clearRect(0, 0, PAPER_WIDTH, PAPER_HEIGHT)
+    ctx.clearRect(0, 0, this.width, this.height)
     this.overlay.style.cursor = this.spoiled ? 'not-allowed' : this.isPressed ? 'none' : this.placed && this.hover && this.hits(this.hover) ? 'pointer' : 'crosshair'
     if ((!this.visible && !this.placed) || !this.enabled || this.spoiled) return
     const local = this.local(this.interaction === 'pressure' ? this.pressure : this.pose)
@@ -569,9 +580,9 @@ export class StampEngine {
       glow.addColorStop(0, '#a52d2b25'); glow.addColorStop(1, '#a52d2b00')
       ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r - 2, 0, Math.PI * 2); ctx.clip()
       ctx.fillStyle = glow; ctx.fillRect(-r, -r, r * 2, r * 2); ctx.restore()
-      ctx.strokeStyle = INK; ctx.lineWidth = 2
+      ctx.strokeStyle = this.ink; ctx.lineWidth = 2
       ctx.beginPath(); ctx.arc(local.x, local.y, 14, 0, Math.PI * 2); ctx.stroke()
-      ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(local.x, local.y, 3, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = this.ink; ctx.beginPath(); ctx.arc(local.x, local.y, 3, 0, Math.PI * 2); ctx.fill()
     }
     ctx.restore()
     ctx.fillStyle = '#816a48'; ctx.font = '17px sans-serif'; ctx.textAlign = 'center'
@@ -585,20 +596,55 @@ export class StampEngine {
     this.ctx.putImageData(entry.pixels, 0, 0); this.wet.set(entry.wet)
     this.count = entry.count; this.sheet = entry.sheet; this.spoiled = entry.spoiled
     this.wetness = Math.max(0, ...this.wet); this.lastWetBucket = Math.round(this.wetness * 100)
-    drawDocument(context(this.background), this.sheet)
+    this.drawBackground()
     this.lift()
   }
 
   freshDocument() {
     if (this.isPressed) return
-    this.snapshot(); this.ctx.clearRect(0, 0, PAPER_WIDTH, PAPER_HEIGHT)
+    this.snapshot(); this.ctx.clearRect(0, 0, this.width, this.height)
     this.wet.fill(0); this.wetness = 0; this.lastWetBucket = 0; this.spoiled = false
     this.count = 0; this.sheet++
-    drawDocument(context(this.background), this.sheet); this.lift()
+    this.drawBackground(); this.lift()
+  }
+
+  resetDraft() {
+    this.finish()
+    this.history = []
+    this.ctx.clearRect(0, 0, this.width, this.height)
+    this.wet.fill(0); this.wetness = 0; this.spoiled = false; this.count = 0
+    this.drawBackground(); this.lift()
+  }
+
+  async captureDraft() {
+    const pixels = this.ctx.getImageData(0, 0, this.width, this.height).data
+    let left = this.width, top = this.height, right = -1, bottom = -1
+    for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) {
+      if (pixels[(y * this.width + x) * 4 + 3] === 0) continue
+      left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y)
+    }
+    if (right < left) return null
+    const width = right - left + 1, height = bottom - top + 1
+    const crop = makeCanvas(width, height)
+    context(crop).drawImage(this.paper, left, top, width, height, 0, 0, width, height)
+    const count = this.count, color = this.ink
+    const blob = await new Promise<Blob>((resolve, reject) => crop.toBlob(value => value ? resolve(value) : reject(new Error('Could not save your draft.')), 'image/png'))
+    return { blob, x: left, y: top, width, height, count, color }
+  }
+
+  async restoreDraft(draft: { blob: Blob; x: number; y: number; count: number }) {
+    const bitmap = await createImageBitmap(draft.blob)
+    try {
+      this.ctx.clearRect(0, 0, this.width, this.height)
+      this.ctx.drawImage(bitmap, draft.x, draft.y)
+      this.count = draft.count
+      this.history = []
+      this.sync()
+    } finally { bitmap.close() }
   }
 
   async exportPNG() {
-    const output = makeCanvas(PAPER_WIDTH, PAPER_HEIGHT), ctx = context(output)
+    const output = makeCanvas(this.width, this.height), ctx = context(output)
     ctx.drawImage(this.background, 0, 0); ctx.drawImage(this.damage, 0, 0); ctx.drawImage(this.paper, 0, 0)
     const blob = await new Promise<Blob>((resolve, reject) => output.toBlob(value => value ? resolve(value) : reject(new Error('Could not create the PNG.')), 'image/png'))
     const url = URL.createObjectURL(blob), link = document.createElement('a')
