@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DesignPad, StampEngine, context } from './canvas'
 import GlobalBoard from './board/GlobalBoard'
+import StampHelp from './StampHelp'
 
 type IconName = 'pen' | 'eraser' | 'undo' | 'clear' | 'arrow' | 'back' | 'download' | 'spark' | 'check' | 'lift'
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -18,13 +19,6 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   }
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
-
-const gestures = [
-  { name: 'Land', action: 'Tap for a patchy first impression.', symbol: '↓' },
-  { name: 'Rock', action: 'Press around the face to fill it in.', symbol: '↔' },
-  { name: 'Slide', action: 'Drag from the air. Let the ink wander.', symbol: '↝' },
-  { name: 'Turn', action: 'Set your angle. Scroll over the paper.', symbol: '↻' },
-]
 
 export default function App() {
   const [stage, setStage] = useState<'design' | 'stamp' | 'board'>('design')
@@ -114,13 +108,13 @@ export default function App() {
   }
   async function exportArt() {
     setExporting(true)
-    try { await stamper.current?.exportPNG(); setNotice('Your stamped document is ready to keep.') }
+    try { await stamper.current?.exportPNG(); setNotice('Document saved.') }
     catch { setNotice('The PNG could not be saved. Please try again.') }
     finally { setExporting(false) }
   }
   function freshDocument() {
     stamper.current?.freshDocument()
-    setNotice('A fresh request. Same personal stamp.')
+    setNotice('Fresh document ready.')
   }
 
   const saturation = Math.min(100, Math.round(desk.wetness * 100))
@@ -130,37 +124,33 @@ export default function App() {
     <header className="site-header">
       <a className="brand" href="#" onClick={e => { e.preventDefault(); editStamp() }} aria-label="Make Your Mark — edit your stamp">
         <span className="brand-seal" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m6 23 5-15 5 12 5-12 5 15M8 27h16" /></svg></span>
-        <span>Make Your Mark<span className="brand-caption">A SMALL DEPARTMENT OF SELF-EXPRESSION</span></span>
+        <span>Make Your Mark</span>
       </a>
-      <nav className="steps" aria-label="Studio stages">
-        <button className={`step ${stage === 'design' ? 'active' : 'complete'}`} onClick={editStamp} aria-current={stage === 'design' ? 'step' : undefined}><span className="step-number">01</span><span>Make your stamp</span></button>
-        <span className="step-connector" />
-        <button className={`step ${stage === 'stamp' ? 'active' : ''}`} disabled={!designState.hasInk} onClick={() => { setDestination('personal'); useStamp('personal') }} aria-current={stage === 'stamp' ? 'step' : undefined}><span className="step-number">02</span><span>Personal Studio</span></button>
-        <button className="board-nav-button" onClick={openBoard} aria-current={stage === 'board' ? 'page' : undefined}>Global Stamp Board</button>
+      <nav className="studio-nav" aria-label="Studio navigation">
+        <button onClick={editStamp} aria-current={stage === 'design' ? 'page' : undefined}>Make stamp</button>
+        <button onClick={() => { setDestination('personal'); if (designState.hasInk) useStamp('personal'); else { editStamp(); setNotice('Make a stamp to open your studio.') } }} aria-current={stage === 'stamp' ? 'page' : undefined}>Personal studio</button>
+        <button onClick={openBoard} aria-current={stage === 'board' ? 'page' : undefined}>Shared board</button>
       </nav>
     </header>
 
     <main>
       <section className="design-stage stage" hidden={stage !== 'design'} aria-label="Design your stamp">
         <div className="design-intro">
-          <div className="eyebrow"><span className="little-line" /> YOUR OWN LITTLE SEAL</div>
-          <h1>Made by hand.<br />Marked <em>by you.</em></h1>
-          <p className="intro-copy">A tiny symbol with a little character.<br />Shape yours into the rubber, then take it<br className="desktop-break" /> to a desk with something to stamp.</p>
-          <div className="intro-footnote"><span className="hand-star" aria-hidden="true">✳</span><p>Wobbly lines welcome.<br /><span>Your lines become the inked mark.</span></p></div>
-          <div className="preview-note">
-            <div className="stamp-preview"><canvas ref={previewCanvas} width="128" height="128" aria-label="Live preview of your stamp" />{!designState.hasInk && <span aria-hidden="true">your<br />little<br />mark</span>}</div>
-            <div><span className="eyebrow">THE IMPRESSION</span><p>A small seal.<br />Entirely your own.</p></div>
+          <h1>Made by hand.<br />{' '}Marked <em>by you.</em></h1>
+          <p className="intro-copy" id="drawing-hint">Carve a symbol. Your lines become the stamp.</p>
+          <p className="intro-footnote">Wobbly lines welcome.</p>
+          <div className="preview-note" hidden={!designState.hasInk}>
+            <div className="stamp-preview"><canvas ref={previewCanvas} width="128" height="128" aria-label="Live preview of your stamp" /></div>
+            <span>Your stamp</span>
           </div>
         </div>
         <div className="design-workspace">
-          <div className="bench-label"><span className="eyebrow">01 / AT THE WORKBENCH</span><span>RUBBER, READY FOR A LITTLE CHARACTER</span></div>
           <div className="rubber-holder">
             <div className={`design-surface ${tool === 'eraser' ? 'erasing' : ''}`}>
               <div className="rubber-rings" aria-hidden="true" />
               <canvas ref={designCanvas} aria-label="Shape your personal stamp on the circular rubber face" aria-describedby="drawing-hint" />
-              {!designState.hasInk && !designState.canUndo && <div className="drawing-placeholder" aria-hidden="true"><span>✧</span><span>Give it some character.</span><small>SHAPE YOUR SYMBOL HERE</small></div>}
+              {!designState.hasInk && !designState.canUndo && <div className="drawing-placeholder" aria-hidden="true"><span>✧</span><span>Carve here.</span></div>}
             </div>
-            <span className="rubber-edge-label" aria-hidden="true">YOUR PERSONAL SEAL · MADE WITH A LITTLE PRESSURE</span>
           </div>
           <div className="carving-tools">
             <div className="tool-toggle" role="group" aria-label="Shaping tool">
@@ -173,58 +163,52 @@ export default function App() {
               <button className="icon-button" onClick={() => designer.current?.clear()} disabled={!designState.hasInk} title="Start the stamp over" aria-label="Clear stamp design"><Icon name="clear" /></button>
             </div>
           </div>
-          <div className="destination-choice" role="group" aria-label="Where to take your stamp"><button aria-pressed={destination === 'personal'} onClick={() => setDestination('personal')}>Personal Studio</button><button aria-pressed={destination === 'board'} onClick={() => setDestination('board')}>Global Stamp Board</button></div>
-          <div className="design-next"><span id="drawing-hint">{destination === 'board' ? 'A personal mark. A shared surface.' : 'One seal. A desk full of possibilities.'}</span><button className="primary-button" onClick={() => useStamp()} disabled={!designState.hasInk}>Use this stamp <Icon name="arrow" /></button></div>
+          <div className="design-next">
+            <div className="destination-choice" role="group" aria-label="Where to take your stamp"><button aria-pressed={destination === 'personal'} onClick={() => setDestination('personal')}>Personal studio</button><button aria-pressed={destination === 'board'} onClick={() => setDestination('board')}>Shared board</button></div>
+            <button className="primary-button" onClick={() => useStamp()} disabled={!designState.hasInk}>{destination === 'board' ? 'Stamp on shared board' : 'Stamp privately'}</button>
+          </div>
         </div>
       </section>
 
       <section className="stamp-stage stage" hidden={stage !== 'stamp'} aria-label="Review and stamp a document">
         <div className="studio-title-row">
-          <div><div className="eyebrow">THE DEPARTMENT OF LITTLE THINGS</div><h1 ref={heading} tabIndex={-1}>The desk <em>is yours.</em></h1></div>
-          <div className="desk-assignment"><span className="assignment-pin" aria-hidden="true">✳</span><p>One little request needs your mark.<br /><strong>A little pressure. Know when to lift.</strong></p></div>
+          <h1 ref={heading} tabIndex={-1}>Personal <em>studio.</em></h1>
         </div>
         <div className="desk-workspace">
           <div className="studio-toolbar">
-            <div className="original-stamp"><canvas ref={originalPreview} width="128" height="128" aria-label="Your original stamp" /><div><span className="small-label">YOUR PERSONAL SEAL</span><button className="text-button" onClick={editStamp}><Icon name="pen" size={13} /> Edit stamp</button></div></div>
+            <div className="original-stamp"><canvas ref={originalPreview} width="128" height="128" aria-label="Your original stamp" /><button className="text-button" onClick={editStamp}><Icon name="pen" size={16} /> Edit stamp</button></div>
             <label className="size-control" title={desk.placed ? 'Lift the stamp to change its size' : undefined}><span>Size</span><input aria-label="Stamp size" type="range" min="180" max="480" step="10" value={stampSize} disabled={desk.placed || desk.pressed} onChange={e => { const size = Number(e.target.value); setStampSize(size); stamper.current!.size = size; stamper.current!.preview() }} /></label>
             <label className="angle-control"><span>Angle</span><input aria-label="Stamp angle in degrees" type="number" min="-180" max="180" step="5" value={desk.angle} disabled={desk.pressed || desk.spoiled} onChange={e => { if (e.target.value !== '') stamper.current?.setAngle(Number(e.target.value)) }} /><span>°</span></label>
             <div className="paper-actions">
               <button className="quiet-button" onClick={() => stamper.current?.undo()} disabled={!desk.canUndo || desk.pressed} title="Undo last contact (⌘/Ctrl Z)"><Icon name="undo" /><span>Undo</span></button>
-              <button className="quiet-button" onClick={freshDocument} disabled={desk.pressed}><Icon name="clear" /><span>Fresh document</span></button>
+              <button className="quiet-button" onClick={freshDocument} disabled={desk.pressed}><Icon name="clear" /><span>New document</span></button>
               <button className="primary-button export-button" onClick={exportArt} disabled={exporting || desk.pressed}><Icon name="download" /><span>{exporting ? 'Saving…' : 'Save PNG'}</span></button>
             </div>
           </div>
           <div className={`contact-instructions ${desk.spoiled ? 'spoiled' : ''}`} role="status" aria-live="polite">
-            <div><span className="contact-step">{desk.spoiled ? '!' : desk.sliding ? '↝' : desk.placed ? '02' : '01'}</span><p><strong>{desk.spoiled ? 'Oh dear. This one soaked through.' : desk.sliding ? 'Let it slide.' : desk.placed ? 'Work the edges. Then lift to reveal.' : 'A request is waiting for your seal.'}</strong><span>{desk.spoiled ? 'Too much ink in one spot. Undo the contact, or try a fresh document.' : desk.sliding ? 'Slow leaves more ink; fast leaves less. Release to set it down.' : desk.placed ? 'Press different parts of the face to fill in the dry patches.' : 'Tap to land a patchy mark. Or press and drag to slide the stamp.'}</span></p></div>
+            <p id="personal-hint">{desk.spoiled ? 'Paper soaked through. Undo or start a new document.' : desk.sliding ? 'Slower leaves more ink. Release to stop sliding.' : desk.placed ? 'Press around the edges, then lift.' : 'Tap to place. Drag to smear.'}</p>
             <button className="lift-button" onClick={() => stamper.current?.lift()} disabled={!desk.placed || desk.pressed || desk.spoiled}><Icon name="lift" size={16} /> Lift stamp <kbd>Esc</kbd></button>
           </div>
+          <StampHelp />
           <div className="document-desk">
-            <div className="desk-tab"><span className="status-dot" /> INCOMING / {String(desk.sheet).padStart(3, '0')}</div>
             <div className={`paper-frame ${desk.pressed ? 'is-pressed' : ''} ${desk.spoiled ? 'paper-spoiled' : ''}`}>
               <div className="paper-surface">
                 <canvas ref={documentCanvas} className="document-art" aria-label="Illustrated request form with a stamp-here area" />
                 <canvas ref={damageCanvas} className="paper-damage" aria-label="Paper moisture and ink seepage" />
                 <canvas ref={paperCanvas} className="paper-art" aria-label="Your stamped composition" />
-                <canvas ref={cursorCanvas} className="paper-cursor" tabIndex={0} aria-label="Stamping surface: tap to place and ink; drag from a lifted stamp to slide; press a placed stamp to rock; scroll or use arrow keys to rotate before or during contact; Escape lifts" aria-describedby="gesture-help" />
+                <canvas ref={cursorCanvas} className="paper-cursor" tabIndex={0} aria-label="Stamping surface: tap to place and ink; drag from a lifted stamp to slide; press a placed stamp to rock; scroll or use arrow keys to rotate before or during contact; Escape lifts" aria-describedby="personal-hint" />
               </div>
             </div>
-            <div className="paper-caption"><span>{desk.spoiled ? 'FILE STATUS: SPOILED' : desk.count ? `${desk.count} CONTACT${desk.count === 1 ? '' : 'S'} · MARKED BY YOU` : 'FILE STATUS: AWAITING YOUR MARK'}</span><span>1800 × 1200 PX / READY TO KEEP</span></div>
+            <div className="paper-caption"><span>Document {desk.sheet}</span><span>Private · Save to keep</span></div>
           </div>
           <div className={`paper-condition ${condition}`}>
-            <div><span className="wet-label">{desk.spoiled ? 'Paper soaked through' : condition === 'damp' ? 'Getting damp — give it a lift' : 'Easy does it. Paper absorbs ink.'}</span><span className="wet-meter" role="progressbar" aria-label="Paper saturation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={saturation}><span style={{ width: `${saturation}%` }} /></span></div>
-            <span>{desk.spoiled ? 'A fresh sheet is one click away.' : 'Scroll / ← → to turn. Slow moves leave more ink. Esc lifts.'}</span>
+            <div><span className="wet-label">{desk.spoiled ? 'Soaked' : condition === 'damp' ? 'Getting damp — lift soon' : 'Paper moisture'}</span><span className="wet-meter" role="progressbar" aria-label="Paper saturation" aria-valuemin={0} aria-valuemax={100} aria-valuenow={saturation}><span style={{ width: `${saturation}%` }} /></span></div>
           </div>
         </div>
       </section>
 
-      <GlobalBoard active={stage === 'board'} stamp={designState.hasInk ? designCanvas.current : null} version={stampVersion} onEdit={() => { setDestination('board'); editStamp() }} onPersonal={() => { setDestination('personal'); if (designState.hasInk) useStamp('personal'); else editStamp() }} />
-
-      <section className="gesture-strip" id="gesture-help" aria-label="Ways to use your stamp">
-        <div className="gesture-intro"><span className="eyebrow">ONE LITTLE SEAL.</span><span>A personal touch.</span></div>
-        {gestures.map((gesture, i) => <div className="gesture" key={gesture.name}><span className="gesture-symbol" aria-hidden="true">{gesture.symbol}</span><div><h2>{gesture.name}<span>0{i + 1}</span></h2><p>{gesture.action}</p></div></div>)}
-      </section>
+      <GlobalBoard active={stage === 'board'} stamp={designState.hasInk ? designCanvas.current : null} version={stampVersion} onEdit={() => { setDestination('board'); editStamp() }} />
     </main>
-    <footer><span>A small experiment in image & identity.</span><span>Filed under: <em>perfectly imperfect.</em></span></footer>
     <div className={`toast ${notice ? 'shown' : ''}`} role="status" aria-live="polite">{notice && <Icon name="check" size={16} />}{notice}</div>
   </div>
 }

@@ -1,6 +1,6 @@
 # Make Your Mark
 
-A personal seal, an illustrated request form, and a shared surface. Shape a symbol on a circular rubber face, then land, rock, slide, and rotate it in the Personal Studio or draft a contribution to the Global Stamp Board.
+A personal seal, an illustrated request form, and a shared surface. Shape a symbol on a circular rubber face, then land, rock, slide, and rotate it in the Personal Studio or draft a contribution to the Shared board.
 
 Built for Georgia Tech LMC 4730. DE2 explores Image and Identity; the DE3 prototype changes the audience's role from individual creator to contributor to a collective artwork.
 
@@ -20,7 +20,7 @@ Open the printed URL, normally `http://127.0.0.1:5173/StampStudio/`.
 ```sh
 npm run build       # TypeScript checks and production build
 npm run preview     # Serve the production build locally
-npm test            # Nineteen browser integration tests, with isolated shared storage
+npm test            # Twenty browser integration tests, with isolated shared storage
 npm run test:server # Four storage and validation tests
 ```
 
@@ -38,7 +38,7 @@ Shape a personal symbol inside the circular rubber face. **Carve** adds a line; 
 - **Turn:** scroll over the paper, use arrow keys with the paper active, or enter an angle. Rotation before contact deposits no ink. Rotation during contact transfers overlapping orientations, with slower turns leaving more ink than rapid spins.
 - **Lift stamp / Escape:** reveal the impression and get ready to place or slide again. Clicking elsewhere also starts a new landing. Lift before changing stamp size.
 - **Watch the paper:** repeated or prolonged contact accumulates moisture locally. A dampness meter and spreading ink warn you before the paper soaks through. Concentrated contact takes roughly six seconds from dry paper to failure; distributed contacts accumulate less at any one spot. These are prototype tuning values, not a physical fluid simulation. There is no automatic drying in this version.
-- **Fresh document:** replace the spoiled or completed form while keeping your seal. Spoiling does not erase the result or immediately replace the sheet. Undo can restore the previous contact, moisture state, or document.
+- **New document:** replace the spoiled or completed form while keeping your seal. Spoiling does not erase the result or immediately replace the sheet. Undo can restore the previous contact, moisture state, or document.
 - **Save PNG:** export the illustrated form, actual ink, and seepage as an opaque 1800 × 1200 image. The stamp carrier and UI are excluded.
 
 ⌘Z / Ctrl+Z undoes a shaping stroke or an entire landing/pressure/slide gesture. Drawing history keeps 30 actions; document history keeps 10 to bound memory.
@@ -47,9 +47,9 @@ Editing the seal preserves the current personal document. Personal Studio work l
 
 ## On the shared board
 
-Browse without making a stamp or signing in. The finite 2400 × 1600 surface has four inks, fit/zoom controls, and a move mode. **Move board** lets you drag at any zoom, including the fitted view. While it is on, trackpad scrolling and arrow keys also move the view; Escape returns to stamping. **Fit** restores the centred, whole-board view. Zooming keeps the point at the middle of the view in place. The same stamp engine handles landing, rocking, sliding, and rotation. Shared paper does not soak through: one participant cannot spoil everyone else's surface. The original document still does.
+Browse without making a stamp or signing in. The finite 2400 × 1600 surface has four inks, fit/zoom controls, and a move mode. **Move** lets you drag at any zoom, including the fitted view. While it is on, trackpad scrolling and arrow keys also move the view; Escape returns to stamping. **Fit** restores the centred, whole-board view. Zooming keeps the point at the middle of the view in place. The same stamp engine handles landing, rocking, sliding, and rotation. Shared paper does not soak through: one participant cannot spoil everyone else's surface. The original document still does.
 
-Marks stay in a separate private draft until **Leave my mark**. Undo and discard affect only that draft. Completed contacts are saved in this browser's IndexedDB, with a download option; the stamp design itself still lives in memory. Submitted contributions become independent, immutable transparent layers ordered by the server. A lost response preserves the exact pending submission so a retry cannot duplicate it. The board checks for new contributions every 15 seconds and on manual refresh.
+Marks stay in a separate private draft until **Share to board**. Undo and discard affect only that draft. Completed contacts are saved in this browser's IndexedDB, with a download option; the stamp design itself still lives in memory. Submitted contributions become independent, immutable transparent layers ordered by the server. A lost response preserves the exact pending submission so a retry cannot duplicate it. The board checks for new contributions every 15 seconds and on manual refresh.
 
 To try shared persistence locally, copy `.env.example` to `.env.local`, start `npm run board:dev` in one terminal and `npm run dev` in another. The board says **Local shared preview**; its SQLite database lives in ignored `.local/`. This is a development backend, not public hosting. Production ignores the local backend URL and uses the configured Supabase project only.
 
@@ -68,7 +68,7 @@ The Vite base is `/StampStudio/`. `.github/workflows/deploy.yml` checks types, b
 - A small moisture grid tracks local absorption. A low-resolution diffusion layer softens ink in damp regions without modifying the original paper pixels. Undo snapshots include moisture and document state.
 - `src/document.ts` draws the simple illustrated form for both the live desk and PNG export.
 - Pointer capture, cancellation, lost focus, and tab visibility changes end contact safely. Wheel input rotates on the paper; ordinary scrolling remains available outside it. The desktop layout keeps the target in view.
-- The interface has responsive layouts, keyboard focus, reduced-motion support, and system font fallbacks. Desktop Chrome is the primary target; touch pressure/slide work, but multi-touch rotation is not implemented.
+- The interface has consistent Make stamp / Personal studio / Shared board navigation, state-based gesture hints, optional Help, readable controls, keyboard focus, reduced-motion support, and system font fallbacks. Visitors without a stamp start in Move mode; stamp adjustments and draft actions appear when relevant. Narrow layouts put the board before the tool panel. Desktop Chrome is the primary target; touch pressure/slide work, but multi-touch rotation is not implemented.
 
 ## Validation and process
 

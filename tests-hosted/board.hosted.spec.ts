@@ -6,7 +6,7 @@ const env = loadEnv('development', process.cwd(), 'VITE_')
 const origin = env.VITE_SUPABASE_URL, api = `${origin}/functions/v1/stamp-board`
 const key = env.VITE_SUPABASE_PUBLISHABLE_KEY
 const image = (canvas: Locator) => canvas.evaluate((node: HTMLCanvasElement) => node.toDataURL())
-const boardButton = (page: Page) => page.getByRole('navigation').getByRole('button',{name:'Global Stamp Board',exact:true})
+const boardButton = (page: Page) => page.getByRole('navigation').getByRole('button',{name:'Shared board',exact:true})
 
 async function prepare(page: Page, ink: string, x: number, y: number) {
   await page.goto('./')
@@ -22,7 +22,7 @@ async function prepare(page: Page, ink: string, x: number, y: number) {
   await page.getByRole('button',{name:ink,exact:true}).click()
   const cursor=page.getByLabel('Shared stamping surface',{exact:true}), c=(await cursor.boundingBox())!
   await page.mouse.click(c.x+c.width*x,c.y+c.height*y)
-  await expect(page.getByRole('button',{name:'Leave my mark',exact:true})).toBeEnabled()
+  await expect(page.getByRole('button',{name:'Share to board',exact:true})).toBeEnabled()
 }
 
 test('hosted board persists across isolated visitors, concurrent writes and a lost response',async({browser,request})=>{
@@ -51,8 +51,8 @@ test('hosted board persists across isolated visitors, concurrent writes and a lo
     await a.route(blockRefresh,route=>route.abort('connectionfailed'))
     b.on('request',r=>{if(r.url()===`${api}/contributions`&&r.method()==='POST')records.push({id:r.postDataJSON().id,ink:'Ochre',note:'Technical T; second independent visitor.'})})
     await Promise.all([
-      a.getByRole('button',{name:'Leave my mark',exact:true}).click().then(()=>expect(a.getByRole('button',{name:'Retry sharing',exact:true})).toBeEnabled()),
-      b.getByRole('button',{name:'Leave my mark',exact:true}).click().then(()=>expect(b.getByText('Your mark is part of the board. Future visitors will find it here.',{exact:true})).toBeVisible())
+      a.getByRole('button',{name:'Share to board',exact:true}).click().then(()=>expect(a.getByRole('button',{name:'Retry sharing',exact:true})).toBeEnabled()),
+      b.getByRole('button',{name:'Share to board',exact:true}).click().then(()=>expect(b.getByText('Shared. Your mark stays here.',{exact:true})).toBeVisible())
     ])
     expect(await image(a.getByTestId('shared-draft'))).toBe(original)
     const after=await list()
@@ -69,8 +69,8 @@ test('hosted board persists across isolated visitors, concurrent writes and a lo
     expect((await list()).total).toBe(after.total)
     checks.push('Retry reused the same contribution ID and added no duplicate.')
     await a.reload(); await a.unroute(blockRefresh); await boardButton(a).click()
-    await expect(a.getByText('Your mark is part of the board. Future visitors will find it here.',{exact:true})).toBeVisible()
-    await expect(a.getByRole('button',{name:'Leave my mark',exact:true})).toBeDisabled()
+    await expect(a.getByText('Shared. Your mark stays here.',{exact:true})).toBeVisible()
+    await expect(a.getByRole('button',{name:'Share to board',exact:true})).toBeHidden()
     checks.push('Refresh recovered the pending draft and cleared it only after finding the committed layer.')
     await b.getByRole('button',{name:'Refresh board',exact:true}).click()
     await expect(b.getByRole('button',{name:'Refresh board',exact:true})).toBeEnabled()
