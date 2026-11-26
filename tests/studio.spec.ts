@@ -34,7 +34,7 @@ async function design(page: Page) {
 }
 async function studio(page: Page) {
   await design(page)
-  await page.getByRole('button', { name: 'Use this stamp' }).click()
+  await page.getByRole('button', { name: 'Stamp privately' }).click()
   const cursor = page.getByLabel('Stamping surface:', { exact: false })
   const paper = page.getByLabel('Your stamped composition', { exact: true })
   return { cursor, paper, b: await box(cursor) }
@@ -48,7 +48,7 @@ async function land(page: Page, b: { x: number; y: number; width: number; height
 test.beforeEach(async ({ page }) => { await page.goto('./') })
 
 test('circular rubber editor preserves the personal symbol, restore, undo, and width choices', async ({ page }) => {
-  await expect(page.getByRole('button', { name: 'Use this stamp' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Stamp privately' })).toBeDisabled()
   const canvas = await design(page), original = await image(canvas)
   const originalPixels = await stats(canvas), b = await box(canvas)
   expect(originalPixels.area).toBeGreaterThan(5000)
@@ -66,7 +66,7 @@ test('circular rubber editor preserves the personal symbol, restore, undo, and w
   expect((await stats(canvas)).area).toBe(0)
   await page.getByRole('button', { name: 'Undo shaping', exact: true }).click()
   expect(await image(canvas)).toBe(original)
-  await page.getByRole('button', { name: 'Use this stamp' }).click()
+  await page.getByRole('button', { name: 'Stamp privately' }).click()
   await page.getByRole('button', { name: 'Edit stamp', exact: true }).click()
   expect(await image(canvas)).toBe(original)
 })
@@ -97,7 +97,9 @@ test('pressing a dry area fills it locally and stops changing after release', as
     const mask = source.getContext('2d')!.getImageData(0, 0, 512, 512).data
     const ctx = target.getContext('2d')!
     for (let y = 50; y < 462; y += 3) for (let x = 50; x < 462; x += 3) {
-      if (mask[(y * 512 + x) * 4 + 3] < 200) continue
+      // Sample inside a solid line, away from antialiased edges whose tiny
+      // per-frame increments can round to zero at a different display scale.
+      if ([-3, 0, 3].some(oy => [-3, 0, 3].some(ox => mask[((y + oy) * 512 + x + ox) * 4 + 3] < 250))) continue
       const dx = (x / 512 - .5) * 320, dy = (y / 512 - .5) * 320
       const alpha = ctx.getImageData(Math.round(px + dx), Math.round(py + dy), 1, 1).data[3]
       if (alpha < 70) return { dx, dy }
@@ -195,17 +197,17 @@ test('too much contact visibly dampens and spoils the paper; fresh document and 
   await page.mouse.move(p.x, p.y)
   await page.mouse.down()
   await expect(cursor).toHaveAttribute('data-condition', 'damp', { timeout: 6000 })
-  await expect(page.getByText('Getting damp — give it a lift', { exact: true })).toBeVisible()
+  await expect(page.getByText('Getting damp — lift soon', { exact: true })).toBeVisible()
   expect((await stats(page.getByLabel('Paper moisture and ink seepage', { exact: true }))).area).toBeGreaterThan(0)
   await expect(cursor).toHaveAttribute('data-condition', 'soaked', { timeout: 10000 })
   await page.mouse.up()
   await expect(cursor).toHaveAttribute('data-pressed', 'false')
-  await expect(page.getByText('Oh dear. This one soaked through.', { exact: true })).toBeVisible()
+  await expect(page.getByText('Paper soaked through. Undo or start a new document.', { exact: true })).toBeVisible()
   const spoiled = await image(paper)
   if (process.env.CAPTURE_PROCESS) await page.screenshot({ path: 'docs/process/06-soaked-document.jpg', fullPage: true })
   await page.mouse.click(p.x + 200, p.y)
   expect(await image(paper)).toBe(spoiled)
-  await page.getByRole('button', { name: 'Fresh document', exact: true }).click()
+  await page.getByRole('button', { name: 'New document', exact: true }).click()
   await expect(cursor).toHaveAttribute('data-condition', 'dry')
   expect((await stats(paper)).area).toBe(0)
   await expect(page.getByRole('progressbar', { name: 'Paper saturation' })).toHaveAttribute('aria-valuenow', '0')
@@ -221,7 +223,7 @@ test('export includes the form, ink and moisture, preserves editing, and exclude
   await land(page, b)
   const original = await image(paper)
   await page.getByRole('button', { name: 'Edit stamp', exact: true }).click()
-  await page.getByRole('button', { name: 'Use this stamp' }).click()
+  await page.getByRole('button', { name: 'Stamp privately' }).click()
   expect(await image(paper)).toBe(original)
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save PNG', exact: true }).click()
@@ -245,6 +247,7 @@ test('desktop and mobile layouts fit, with actual document desk evidence', async
   for (const width of [1440, 1024, 390]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    if (width >= 900) await expect(page.getByRole('button', { name: 'Stamp privately', exact: true })).toBeInViewport()
   }
   const { b } = await studio(page)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -302,7 +305,7 @@ test('the same turn deposits more ink when rotated slowly, with the same final a
       await page.mouse.move(face.x + face.width * .38, face.y + face.height * .73, { steps: 8 })
       await page.mouse.move(face.x + face.width * .73, face.y + face.height * .63, { steps: 8 })
       await page.mouse.up()
-      await page.getByRole('button', { name: 'Use this stamp' }).click()
+      await page.getByRole('button', { name: 'Stamp privately' }).click()
       const cursor = page.getByLabel('Stamping surface:', { exact: false })
       const paper = page.getByLabel('Your stamped composition', { exact: true })
       const b = await box(cursor)
