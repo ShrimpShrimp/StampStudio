@@ -20,7 +20,7 @@ Open the printed URL, normally `http://127.0.0.1:5173/StampStudio/`.
 ```sh
 npm run build       # TypeScript checks and production build
 npm run preview     # Serve the production build locally
-npm test            # Seventeen browser integration tests, with isolated shared storage
+npm test            # Nineteen browser integration tests, with isolated shared storage
 npm run test:server # Four storage and validation tests
 ```
 
@@ -47,7 +47,7 @@ Editing the seal preserves the current personal document. Personal Studio work l
 
 ## On the shared board
 
-Browse without making a stamp or signing in. The finite 2400 × 1600 surface has four inks, fit/zoom controls, and a move mode. The same stamp engine handles landing, rocking, sliding, and rotation. Shared paper does not soak through: one participant cannot spoil everyone else's surface. The original document still does.
+Browse without making a stamp or signing in. The finite 2400 × 1600 surface has four inks, fit/zoom controls, and a move mode. **Move board** lets you drag at any zoom, including the fitted view. While it is on, trackpad scrolling and arrow keys also move the view; Escape returns to stamping. **Fit** restores the centred, whole-board view. Zooming keeps the point at the middle of the view in place. The same stamp engine handles landing, rocking, sliding, and rotation. Shared paper does not soak through: one participant cannot spoil everyone else's surface. The original document still does.
 
 Marks stay in a separate private draft until **Leave my mark**. Undo and discard affect only that draft. Completed contacts are saved in this browser's IndexedDB, with a download option; the stamp design itself still lives in memory. Submitted contributions become independent, immutable transparent layers ordered by the server. A lost response preserves the exact pending submission so a retry cannot duplicate it. The board checks for new contributions every 15 seconds and on manual refresh.
 
@@ -72,6 +72,6 @@ The Vite base is `/StampStudio/`. `.github/workflows/deploy.yml` checks types, b
 
 ## Validation and process
 
-The original twelve browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout. Additional comparisons replay identical slides and asymmetric rotations at different speeds, and verify visible ink buildup before a stopped slide soaks the paper. Five DE3 browser tests exercise independent browsers, concurrent commits, refresh recovery, failed-response retries, draft isolation, color/pressure/slide preservation, and pan/zoom on desktop and mobile. Four server tests check durable storage, append-only routes, authorization, safe PNG handling, idempotency, and atomic limits.
+The original twelve browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout. Additional comparisons replay identical slides and asymmetric rotations at different speeds, and verify visible ink buildup before a stopped slide soaks the paper. Seven DE3 browser tests exercise independent browsers, concurrent commits, refresh recovery, failed-response retries, draft isolation, color/pressure/slide preservation, and pan/zoom on desktop and mobile. Four server tests check durable storage, append-only routes, authorization, safe PNG handling, idempotency, and atomic limits.
 
 See [`docs/process/README.md`](docs/process/README.md) for actual development captures and notes. They document implementation and project-owner feedback, not a participant study.

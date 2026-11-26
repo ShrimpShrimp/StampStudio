@@ -141,17 +141,115 @@ test('shared stamp keeps pressure, sliding, rotation and ink choices; personal d
   }
 })
 
-test('zoom and move board change the view without adding ink, including a narrow screen', async ({ page }) => {
+test('Move board drags fitted paper in both directions without adding ink, and Fit recentres it', async ({ page }) => {
+  await page.setViewportSize({width:1900,height:1000})
   const cursor = await openBoard(page)
   const original = await pixels(page.getByTestId('shared-draft'))
-  await page.getByRole('button',{name:'Zoom in',exact:true}).click()
+  const community = await pixels(page.getByTestId('shared-artwork'))
+  const initial = (await cursor.boundingBox())!
   await page.getByRole('button',{name:'Move board',exact:true}).click()
-  const b = (await cursor.boundingBox())!
-  await page.mouse.move(b.x+100,b.y+100); await page.mouse.down()
-  await page.mouse.move(b.x+25,b.y+25,{steps:5}); await page.mouse.up()
+  async function drag(dx:number,dy:number) {
+    const b=(await cursor.boundingBox())!
+    await page.mouse.move(b.x+b.width/2,b.y+b.height/2); await page.mouse.down()
+    await page.mouse.move(b.x+b.width/2+dx,b.y+b.height/2+dy,{steps:8}); await page.mouse.up()
+  }
+  await drag(120,70)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-initial.x)).toBe(120)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.y-initial.y)).toBe(70)
+  await drag(-180,-110)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-initial.x)).toBe(-60)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.y-initial.y)).toBe(-40)
+  const contact=(await cursor.boundingBox())!
+  await page.mouse.move(contact.x+contact.width/2,contact.y+contact.height/2); await page.mouse.down()
+  await page.mouse.move(contact.x+contact.width/2+20,contact.y+contact.height/2+10)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-contact.x)).toBe(20)
+  await page.evaluate(()=>window.dispatchEvent(new Event('blur')))
+  const interrupted=(await cursor.boundingBox())!
+  await page.mouse.move(contact.x+contact.width/2+100,contact.y+contact.height/2+90); await page.mouse.up()
+  expect((await cursor.boundingBox())!.x).toBeCloseTo(interrupted.x,1)
+  expect((await cursor.boundingBox())!.y).toBeCloseTo(interrupted.y,1)
   expect(await pixels(page.getByTestId('shared-draft'))).toBe(original)
+  expect(await pixels(page.getByTestId('shared-artwork'))).toBe(community)
   await page.getByRole('button',{name:'Fit',exact:true}).click()
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-initial.x)).toBe(0)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.y-initial.y)).toBe(0)
   await page.setViewportSize({width:390,height:844})
   await expect(page.getByRole('button',{name:'Leave my mark',exact:true})).toBeVisible()
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+})
+
+test('zoom keeps the viewed location, wheel and keys pan, and stamping follows the moved paper', async ({ page }) => {
+  const cursor=await openBoard(page), view=page.getByRole('region',{name:'Shared board view',exact:true})
+  const initial=(await cursor.boundingBox())!
+  await page.getByRole('button',{name:'Move board',exact:true}).click()
+  await page.mouse.move(initial.x+initial.width/2,initial.y+initial.height/2); await page.mouse.down()
+  await page.mouse.move(initial.x+initial.width/2+90,initial.y+initial.height/2+50,{steps:6}); await page.mouse.up()
+  async function centre() {
+    const paper=(await cursor.boundingBox())!, frame=(await view.boundingBox())!
+    return {x:(frame.x+frame.width/2-paper.x)/paper.width,y:(frame.y+frame.height/2-paper.y)/paper.height}
+  }
+  const before=await centre()
+  await page.getByRole('button',{name:'Zoom in',exact:true}).click()
+  await page.getByRole('button',{name:'Zoom in',exact:true}).click()
+  const after=await centre()
+  expect(after.x).toBeCloseTo(before.x,3); expect(after.y).toBeCloseTo(before.y,3)
+  const enlarged=(await cursor.boundingBox())!
+  expect(enlarged.width/initial.width).toBeCloseTo(2,2)
+  const frame=(await view.boundingBox())!
+  await page.mouse.move(frame.x+frame.width/2,frame.y+frame.height/2)
+  await page.mouse.wheel(60,30)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-enlarged.x)).toBe(-60)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.y-enlarged.y)).toBe(-30)
+  await view.press('ArrowRight')
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-enlarged.x)).toBe(-100)
+  await view.press('Escape')
+  await expect(page.getByRole('button',{name:'Move board',exact:true})).toHaveAttribute('aria-pressed','false')
+  const moved=(await cursor.boundingBox())!
+  await page.mouse.click(moved.x+moved.width/2,moved.y+moved.height/2)
+  await expect(page.getByRole('button',{name:'Leave my mark',exact:true})).toBeEnabled()
+  const bounds=await page.getByTestId('shared-draft').evaluate((canvas:HTMLCanvasElement)=>{
+    const data=canvas.getContext('2d')!.getImageData(0,0,canvas.width,canvas.height).data
+    let left=canvas.width,right=0,top=canvas.height,bottom=0,area=0
+    for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(data[(y*canvas.width+x)*4+3]){
+      left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);area++
+    }
+    return {left,right,top,bottom,area}
+  })
+  expect(bounds.area).toBeGreaterThan(50)
+  expect(bounds.left).toBeGreaterThan(1040);expect(bounds.right).toBeLessThan(1360)
+  expect(bounds.top).toBeGreaterThan(640);expect(bounds.bottom).toBeLessThan(960)
+  const ink=await pixels(page.getByTestId('shared-draft'))
+  await page.getByLabel('Shared stamp angle',{exact:true}).fill('35')
+  await expect(cursor).toHaveAttribute('data-angle','35')
+  expect(await pixels(page.getByTestId('shared-draft'))).toBe(ink)
+  await page.getByRole('button',{name:'Fit',exact:true}).click()
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.width-initial.width)).toBe(0)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-initial.x)).toBe(0)
+  await expect.poll(async()=>Math.round((await cursor.boundingBox())!.y-initial.y)).toBe(0)
+})
+
+test('touch panning works at Fit and recovers from an interrupted touch',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true})
+  const page=await context.newPage()
+  try {
+    const cursor=await openBoard(page), view=page.getByRole('region',{name:'Shared board view',exact:true})
+    await page.getByRole('button',{name:'Move board',exact:true}).click()
+    await view.scrollIntoViewIfNeeded()
+    const original=await pixels(page.getByTestId('shared-draft')), initial=(await cursor.boundingBox())!
+    const touch=await context.newCDPSession(page)
+    async function drag(dx:number,dy:number,cancel=false){
+      const b=(await cursor.boundingBox())!,x=b.x+b.width/2,y=b.y+b.height/2
+      await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]})
+      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+dx,y:y+dy,id:1}]})
+      await touch.send('Input.dispatchTouchEvent',{type:cancel?'touchCancel':'touchEnd',touchPoints:[]})
+    }
+    await drag(45,35,true)
+    await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-initial.x)).toBe(45)
+    await drag(-25,-20)
+    await expect.poll(async()=>Math.round((await cursor.boundingBox())!.x-initial.x)).toBe(20)
+    await expect.poll(async()=>Math.round((await cursor.boundingBox())!.y-initial.y)).toBe(15)
+    expect(await pixels(page.getByTestId('shared-draft'))).toBe(original)
+    expect(await view.evaluate(el=>({x:el.scrollLeft,y:el.scrollTop}))).toEqual({x:0,y:0})
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  } finally {await context.close()}
 })

@@ -30,13 +30,14 @@
 .board-topline button { font:inherit; padding:7px 10px; border:1px solid #cfc5b4; border-radius:3px; background:transparent; color:inherit; cursor:pointer; }
 .board-topline button[aria-pressed=true] { background:#393128; color:#fffdf6; }
 .board-topline button:disabled { opacity:.45; cursor:default; }
-.board-viewport { height:max(420px,calc(100dvh - 300px)); max-height:1050px; overflow:auto; background:#e9e1d1; border:1px solid #d8cfbd; overscroll-behavior:contain; }
-.board-scroll-area { display:grid; place-items:center; padding:20px; box-sizing:border-box; }
-.shared-sheet { position:relative; flex-shrink:0; background:#fffdf6; box-shadow:0 5px 18px #3931281f; }
+.board-viewport { height:max(420px,calc(100dvh - 300px)); max-height:1050px; overflow:clip; background:#e9e1d1; border:1px solid #d8cfbd; overscroll-behavior:contain; }
+.board-scene { position:relative; width:100%; height:100%; }
+.shared-sheet { position:absolute; left:50%; top:50%; background:#fffdf6; box-shadow:0 5px 18px #3931281f; }
 .shared-sheet canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .shared-sheet .shared-cursor { pointer-events:auto; touch-action:none; }
 .board-viewport.panning { cursor:grab; touch-action:none; }
 .board-viewport.panning .shared-cursor { cursor:grab!important; }
+.board-viewport.panning:active,.board-viewport.panning:active .shared-cursor { cursor:grabbing!important; }
 .board-viewing-note { position:absolute; bottom:14px; left:0; width:100%; text-align:center; font-size:14px; color:#797165; pointer-events:none; }
 .board-unconfigured { position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:20px; text-align:center; font-size:18px; line-height:1.5; pointer-events:none; color:#756a5a; }
 .board-unconfigured span { font-size:14px; }

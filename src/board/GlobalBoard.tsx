@@ -10,6 +10,8 @@ export default function GlobalBoard({ active, stamp, version, onEdit, onPersonal
   const paper = useRef<HTMLCanvasElement>(null), cursor = useRef<HTMLCanvasElement>(null)
   const background = useRef<HTMLCanvasElement>(null), damage = useRef<HTMLCanvasElement>(null)
   const viewport = useRef<HTMLDivElement>(null), engine = useRef<StampEngine | null>(null)
+  const moveButton = useRef<HTMLButtonElement>(null), fitScale = useRef(.4)
+  const dragging = useRef<{ pointerId: number; x: number; y: number; offset: { x: number; y: number } } | null>(null)
   const composite = useRef<HTMLCanvasElement | null>(null)
   const draft = useRef<Draft | null>(null), cursorSequence = useRef(0), seen = useRef(new Set<string>())
   const syncJob = useRef<Promise<void> | null>(null), saveJob = useRef(Promise.resolve())
@@ -20,6 +22,7 @@ export default function GlobalBoard({ active, stamp, version, onEdit, onPersonal
   const [message, setMessage] = useState(''), [storageWarning, setStorageWarning] = useState('')
   const [ink, setInk] = useState<string>(INKS[0].value), [size, setSize] = useState(320)
   const [pan, setPan] = useState(false), [zoom, setZoom] = useState(1), [fit, setFit] = useState(.4)
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [state, setState] = useState({ count: 0, canUndo: false, pressed: false, placed: false, angle: 0 })
 
   function paintBackground() {
@@ -135,10 +138,40 @@ export default function GlobalBoard({ active, stamp, version, onEdit, onPersonal
   }, [active, ready])
   useEffect(() => {
     if (!active || !viewport.current) return
-    const observer = new ResizeObserver(([entry]) => setFit(Math.max(.08, Math.min((entry.contentRect.width - 40) / BOARD_WIDTH, (entry.contentRect.height - 40) / BOARD_HEIGHT))))
+    const observer = new ResizeObserver(([entry]) => {
+      const next = Math.max(.08, Math.min((entry.contentRect.width - 40) / BOARD_WIDTH, (entry.contentRect.height - 40) / BOARD_HEIGHT))
+      const ratio = next / fitScale.current
+      fitScale.current = next; setFit(next)
+      setOffset(current => ({ x: current.x * ratio, y: current.y * ratio }))
+    })
     observer.observe(viewport.current)
     return () => observer.disconnect()
   }, [active])
+  useEffect(() => {
+    const view = viewport.current
+    if (!active || !pan || !view) return
+    view.focus({ preventScroll: true })
+    const wheel = (event: WheelEvent) => {
+      event.preventDefault()
+      if (dragging.current) return
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? view.clientHeight : 1
+      setOffset(current => ({ x: current.x - event.deltaX * unit, y: current.y - event.deltaY * unit }))
+    }
+    const cancelMove = () => {
+      const contact = dragging.current; dragging.current = null
+      if (contact && view.hasPointerCapture(contact.pointerId)) view.releasePointerCapture(contact.pointerId)
+    }
+    const visibility = () => { if (document.hidden) cancelMove() }
+    view.addEventListener('wheel', wheel, { passive: false })
+    window.addEventListener('blur', cancelMove)
+    document.addEventListener('visibilitychange', visibility)
+    return () => {
+      view.removeEventListener('wheel', wheel)
+      window.removeEventListener('blur', cancelMove)
+      document.removeEventListener('visibilitychange', visibility)
+      cancelMove()
+    }
+  }, [active, pan])
   useEffect(() => {
     if (!active) return
     const undo = (event: KeyboardEvent) => {
@@ -172,7 +205,17 @@ export default function GlobalBoard({ active, stamp, version, onEdit, onPersonal
     link.href = url; link.download = 'my-unshared-stamp.png'; link.click()
     window.setTimeout(() => URL.revokeObjectURL(url),1000)
   }
-  const dragging = useRef<{ x: number; y: number; left: number; top: number } | null>(null)
+  function changeZoom(next: number) {
+    const ratio = next / zoom
+    setZoom(next)
+    // Keep the point under the middle of the view in place while zooming.
+    setOffset(current => ({ x: current.x * ratio, y: current.y * ratio }))
+  }
+  function endMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (dragging.current?.pointerId !== event.pointerId) return
+    dragging.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
   const disabled = !ready || busy || pending || state.pressed
   const scale = fit * zoom
 
@@ -193,13 +236,28 @@ export default function GlobalBoard({ active, stamp, version, onEdit, onPersonal
         <button className="text-button" onClick={onPersonal} disabled={state.pressed || busy}>Go to Personal Studio</button>
       </aside>
       <div className="board-main">
-        <div className="board-topline"><span>{boardConnection === 'local' ? 'Local shared preview' : boardConnection === 'unconfigured' ? 'Shared storage awaiting connection' : loaded ? `${total} shared contribution${total === 1 ? '' : 's'}` : 'Opening the shared board…'}</span><div><button onClick={() => void synchronize().catch(() => setMessage('Could not refresh. Your draft is kept.'))} disabled={refreshing || boardConnection === 'unconfigured'}>{refreshing ? 'Refreshing…' : 'Refresh board'}</button><button aria-pressed={pan} onClick={() => { engine.current?.lift(); setPan(!pan) }} disabled={state.pressed}>Move board</button><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom(Math.max(1,zoom-.5))}>−</button><button onClick={() => { setZoom(1); viewport.current?.scrollTo(0,0) }}>Fit</button><button aria-label="Zoom in" disabled={zoom >= 4} onClick={() => setZoom(Math.min(4,zoom+.5))}>+</button></div></div>
-        <div className={`board-viewport ${pan ? 'panning' : ''}`} ref={viewport}
-          onPointerDownCapture={e => { if (!pan || e.button !== 0) return; e.preventDefault(); e.stopPropagation(); const v = viewport.current!; dragging.current = { x: e.clientX, y: e.clientY, left: v.scrollLeft, top: v.scrollTop }; v.setPointerCapture(e.pointerId) }}
-          onPointerMove={e => { const start = dragging.current; if (!start) return; viewport.current!.scrollTo(start.left + start.x - e.clientX,start.top + start.y - e.clientY) }}
-          onPointerUp={e => { dragging.current = null; if (viewport.current?.hasPointerCapture(e.pointerId)) viewport.current.releasePointerCapture(e.pointerId) }} onPointerCancel={() => { dragging.current = null }}>
-          <div className="board-scroll-area" style={{ minWidth: BOARD_WIDTH * scale + 40, minHeight: BOARD_HEIGHT * scale + 40 }}>
-            <div className="shared-sheet" style={{ width: BOARD_WIDTH * scale, height: BOARD_HEIGHT * scale }}>
+        <div className="board-topline"><span>{boardConnection === 'local' ? 'Local shared preview' : boardConnection === 'unconfigured' ? 'Shared storage awaiting connection' : loaded ? `${total} shared contribution${total === 1 ? '' : 's'}` : 'Opening the shared board…'}</span><div><button onClick={() => void synchronize().catch(() => setMessage('Could not refresh. Your draft is kept.'))} disabled={refreshing || boardConnection === 'unconfigured'}>{refreshing ? 'Refreshing…' : 'Refresh board'}</button><button ref={moveButton} aria-pressed={pan} onClick={() => { engine.current?.lift(); setPan(!pan) }} disabled={state.pressed}>Move board</button><button aria-label="Zoom out" disabled={zoom <= 1} onClick={() => changeZoom(Math.max(1,zoom-.5))}>−</button><button onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }) }}>Fit</button><button aria-label="Zoom in" disabled={zoom >= 4} onClick={() => changeZoom(Math.min(4,zoom+.5))}>+</button></div></div>
+        <div className={`board-viewport ${pan ? 'panning' : ''}`} ref={viewport} role="region" aria-label="Shared board view" tabIndex={active && pan ? 0 : -1}
+          onPointerDownCapture={e => {
+            if (!active || !pan || e.button !== 0 || dragging.current) return
+            e.preventDefault(); e.stopPropagation(); e.currentTarget.focus({ preventScroll: true })
+            dragging.current = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, offset }
+            e.currentTarget.setPointerCapture(e.pointerId)
+          }}
+          onPointerMove={e => {
+            const start = dragging.current
+            if (!pan || !start || start.pointerId !== e.pointerId) return
+            setOffset({ x: start.offset.x + e.clientX - start.x, y: start.offset.y + e.clientY - start.y })
+          }}
+          onPointerUp={endMove} onPointerCancel={endMove} onLostPointerCapture={e => { if (dragging.current?.pointerId === e.pointerId) dragging.current = null }}
+          onKeyDown={e => {
+            if (!pan) return
+            const step = { ArrowLeft: [40,0], ArrowRight: [-40,0], ArrowUp: [0,40], ArrowDown: [0,-40] }[e.key]
+            if (step) { e.preventDefault(); e.stopPropagation(); setOffset(current => ({ x: current.x + step[0], y: current.y + step[1] })) }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setPan(false); moveButton.current?.focus() }
+          }}>
+          <div className="board-scene">
+            <div className="shared-sheet" style={{ width: BOARD_WIDTH * scale, height: BOARD_HEIGHT * scale, transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px)` }}>
               <canvas ref={background} aria-label="Persistent collective artwork" data-testid="shared-artwork" />
               <canvas ref={damage} aria-hidden="true" />
               <canvas ref={paper} aria-label="Your unshared ink" data-testid="shared-draft" />
@@ -209,7 +267,7 @@ export default function GlobalBoard({ active, stamp, version, onEdit, onPersonal
             </div>
           </div>
         </div>
-        <div className="board-bottomline"><span>{pan ? 'Drag to move the board. Turn off Move board to stamp.' : 'Scroll over the board to turn your stamp. Use + / − to zoom.'}</span><span>2400 × 1600 · Shared marks stay</span></div>
+        <div className="board-bottomline"><span>{pan ? 'Drag, scroll, or use arrow keys to move. Esc returns to stamping. Fit recentres the board.' : 'Scroll over the board to turn your stamp. Use + / − to zoom.'}</span><span>2400 × 1600 · Shared marks stay</span></div>
         <p className="board-message" role="status" aria-live="polite">{message || (hasDraft ? 'Your draft stays private until you choose Leave my mark.' : 'Previous visitors’ marks are part of the surface. Add yours alongside or across them.')}</p>
         {pending && <p className="board-warning">Waiting to confirm this contribution. Retry is safe and won’t add a second copy. Editing is paused while its status is uncertain.</p>}
         {storageWarning && <p className="board-warning" role="alert">{storageWarning}</p>}
