@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { DesignPad, StampEngine, context } from './canvas'
+import { DesignPad, StampEngine, context, type CarvingShape } from './canvas'
 import GlobalBoard from './board/GlobalBoard'
 import StampHelp from './StampHelp'
 
-type IconName = 'pen' | 'eraser' | 'undo' | 'clear' | 'arrow' | 'back' | 'download' | 'spark' | 'check' | 'lift'
+type IconName = 'pen' | 'eraser' | 'undo' | 'clear' | 'arrow' | 'back' | 'download' | 'spark' | 'check' | 'lift' | CarvingShape
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
     pen: <><path d="m4 16-1 5 5-1L20 8a2.1 2.1 0 0 0-4-4L4 16Z" /><path d="m14 6 4 4M4 16l4 4" /></>,
@@ -16,6 +16,10 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     spark: <><path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5L12 2Z" /></>,
     check: <path d="m5 12 4 4L19 6" />,
     lift: <><path d="M12 16V3m-5 5 5-5 5 5M4 18v3h16v-3" /></>,
+    freehand: <path d="M3 16c2-8 4-12 7-12s-3 15 1 15 6-12 10-9" />,
+    square: <rect x="4" y="4" width="16" height="16" rx=".5" />,
+    circle: <circle cx="12" cy="12" r="8" />,
+    triangle: <path d="m12 4 9 16H3Z" />,
   }
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>
 }
@@ -25,13 +29,15 @@ export default function App() {
   const [destination, setDestination] = useState<'personal' | 'board'>('personal')
   const [stampVersion, setStampVersion] = useState(0)
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
+  const [shape, setShape] = useState<CarvingShape>('freehand')
   const [penWidth, setPenWidth] = useState(16)
   const [stampSize, setStampSize] = useState(320)
-  const [designState, setDesignState] = useState({ hasInk: false, canUndo: false })
+  const [designState, setDesignState] = useState({ hasInk: false, canUndo: false, drawing: false })
   const [desk, setDesk] = useState({ count: 0, canUndo: false, pressed: false, placed: false, sliding: false, angle: 0, wetness: 0, spoiled: false, sheet: 1 })
   const [notice, setNotice] = useState('')
   const [exporting, setExporting] = useState(false)
   const designCanvas = useRef<HTMLCanvasElement>(null)
+  const shapePreview = useRef<HTMLCanvasElement>(null)
   const previewCanvas = useRef<HTMLCanvasElement>(null)
   const originalPreview = useRef<HTMLCanvasElement>(null)
   const paperCanvas = useRef<HTMLCanvasElement>(null)
@@ -43,10 +49,10 @@ export default function App() {
   const heading = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
-    const pad = new DesignPad(designCanvas.current!, () => {
+    const pad = new DesignPad(designCanvas.current!, shapePreview.current!, () => {
       const current = designer.current
       if (!current) return
-      setDesignState({ hasInk: current.hasInk, canUndo: current.canUndo })
+      setDesignState({ hasInk: current.hasInk, canUndo: current.canUndo, drawing: current.isDrawing })
       for (const preview of [previewCanvas.current, originalPreview.current]) {
         if (!preview) continue
         const ctx = context(preview)
@@ -95,12 +101,14 @@ export default function App() {
     })
   }
   function openBoard() {
+    designer.current?.finish()
     stamper.current?.hide()
     if (stamper.current) stamper.current.enabled = false
     setDestination('board'); setStampVersion(v => v + 1); setStage('board')
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
   function editStamp() {
+    designer.current?.finish()
     stamper.current?.hide()
     if (stamper.current) stamper.current.enabled = false
     setStage('design')
@@ -137,7 +145,7 @@ export default function App() {
       <section className="design-stage stage" hidden={stage !== 'design'} aria-label="Design your stamp">
         <div className="design-intro">
           <h1>Made by hand.<br />{' '}Marked <em>by you.</em></h1>
-          <p className="intro-copy" id="drawing-hint">Carve a symbol. Your lines become the stamp.</p>
+          <p className="intro-copy" id="drawing-hint">{shape === 'freehand' ? 'Carve a symbol. Your lines become the stamp.' : `Drag to size your ${shape}. Release to ${tool === 'eraser' ? 'restore' : 'carve'}.`}</p>
           <p className="intro-footnote">Wobbly lines welcome.</p>
           <div className="preview-note" hidden={!designState.hasInk}>
             <div className="stamp-preview"><canvas ref={previewCanvas} width="128" height="128" aria-label="Live preview of your stamp" /></div>
@@ -149,8 +157,12 @@ export default function App() {
             <div className={`design-surface ${tool === 'eraser' ? 'erasing' : ''}`}>
               <div className="rubber-rings" aria-hidden="true" />
               <canvas ref={designCanvas} aria-label="Shape your personal stamp on the circular rubber face" aria-describedby="drawing-hint" />
-              {!designState.hasInk && !designState.canUndo && <div className="drawing-placeholder" aria-hidden="true"><span>✧</span><span>Carve here.</span></div>}
+              <canvas ref={shapePreview} className="shape-preview" aria-hidden="true" />
+              {!designState.hasInk && !designState.canUndo && !designState.drawing && <div className="drawing-placeholder" aria-hidden="true"><span>✧</span><span>{shape === 'freehand' ? 'Carve here.' : 'Drag to size.'}</span></div>}
             </div>
+          </div>
+          <div className="shape-tools" role="group" aria-label="Carving shape">
+            {(['freehand', 'square', 'circle', 'triangle'] as const).map(value => <button key={value} aria-pressed={shape === value} disabled={designState.drawing} onClick={() => { setShape(value); designer.current!.shape = value }}><Icon name={value} size={18} /><span>{value === 'freehand' ? 'Freehand' : value[0].toUpperCase() + value.slice(1)}</span></button>)}
           </div>
           <div className="carving-tools">
             <div className="tool-toggle" role="group" aria-label="Shaping tool">
@@ -165,7 +177,7 @@ export default function App() {
           </div>
           <div className="design-next">
             <div className="destination-choice" role="group" aria-label="Where to take your stamp"><button aria-pressed={destination === 'personal'} onClick={() => setDestination('personal')}>Personal studio</button><button aria-pressed={destination === 'board'} onClick={() => setDestination('board')}>Shared board</button></div>
-            <button className="primary-button" onClick={() => useStamp()} disabled={!designState.hasInk}>{destination === 'board' ? 'Stamp on shared board' : 'Stamp privately'}</button>
+            <button className="primary-button" onClick={() => useStamp()} disabled={!designState.hasInk || designState.drawing}>{destination === 'board' ? 'Stamp on shared board' : 'Stamp privately'}</button>
           </div>
         </div>
       </section>

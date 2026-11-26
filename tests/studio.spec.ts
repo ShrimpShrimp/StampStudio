@@ -351,3 +351,86 @@ test('a sliding stamp that stops visibly builds a rich impression before the she
   await page.mouse.up()
   await expect(cursor).toHaveAttribute('data-pressed', 'false')
 })
+
+test('shapes resize in preview, commit as clean outlines, and undo as one action', async ({ page }) => {
+  const pad = page.getByLabel('Shape your personal stamp on the circular rubber face', { exact: true })
+  const preview = page.locator('.shape-preview')
+  const b = await box(pad), blank = await image(pad)
+  for (const shape of ['Square', 'Circle', 'Triangle']) {
+    await page.getByRole('group', { name: 'Carving shape', exact: true }).getByRole('button', { name: shape, exact: true }).click()
+    const start = { x: b.x + b.width * .25, y: b.y + b.height * .25 }
+    await page.mouse.move(start.x, start.y); await page.mouse.down()
+    await page.mouse.move(start.x + b.width * .15, start.y + b.height * .1)
+    const small = await stats(preview)
+    await page.mouse.move(start.x + b.width * .45, start.y + b.height * .3)
+    expect((await stats(preview)).area).toBeGreaterThan(small.area * 2)
+    expect(await image(pad)).toBe(blank)
+    await expect(page.getByRole('button', { name: 'Stamp privately', exact: true })).toBeDisabled()
+    await page.mouse.up()
+    expect((await stats(preview)).area).toBe(0)
+    const geometry = await pad.evaluate((canvas: HTMLCanvasElement) => {
+      const ctx = canvas.getContext('2d')!, d = ctx.getImageData(0, 0, 512, 512).data
+      let left = 512, right = 0, top = 512, bottom = 0
+      for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) if (d[(y * 512 + x) * 4 + 3] > 50) {
+        left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
+      }
+      return { width: right - left, height: bottom - top, center: ctx.getImageData(243, 243, 1, 1).data[3], corner: ctx.getImageData(128, 128, 1, 1).data[3], apex: ctx.getImageData(243, 128, 1, 1).data[3] }
+    })
+    expect(geometry.width).toBeGreaterThan(225)
+    expect(geometry.width).toBeLessThan(255)
+    expect(geometry.height).toBeGreaterThan(225)
+    expect(geometry.height).toBeLessThan(255)
+    expect(geometry.center).toBe(0)
+    expect(geometry.corner > 100).toBe(shape === 'Square')
+    expect(geometry.apex).toBeGreaterThan(100)
+    await page.getByRole('button', { name: 'Undo shaping', exact: true }).click()
+    expect(await image(pad)).toBe(blank)
+    await expect(page.getByRole('button', { name: 'Undo shaping', exact: true })).toBeDisabled()
+  }
+  await page.mouse.move(b.x + b.width * .5, b.y + b.height * .5); await page.mouse.down()
+  await page.mouse.move(b.x + b.width * 1.3, b.y + b.height * 1.3); await page.mouse.up()
+  const outside = await pad.evaluate((canvas: HTMLCanvasElement) => {
+    const data = canvas.getContext('2d')!.getImageData(0, 0, 512, 512).data
+    for (let y = 0; y < 512; y++) for (let x = 0; x < 512; x++) if (Math.hypot(x - 256, y - 256) > 243 && data[(y * 512 + x) * 4 + 3]) return true
+    return false
+  })
+  expect(outside).toBe(false)
+  await page.getByRole('button', { name: 'Undo shaping', exact: true }).click()
+  expect(await image(pad)).toBe(blank)
+})
+
+test('shape interruption keeps the existing symbol; shapes combine with freehand and transfer to paper', async ({ page }) => {
+  const pad = await design(page), original = await image(pad), b = await box(pad)
+  await page.getByRole('group', { name: 'Carving shape', exact: true }).getByRole('button', { name: 'Square', exact: true }).click()
+  const start = { x: b.x + b.width * .3, y: b.y + b.height * .3 }
+  await page.mouse.move(start.x, start.y); await page.mouse.down()
+  await page.mouse.move(start.x + b.width * .3, start.y + b.height * .3)
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')))
+  await page.mouse.up()
+  expect(await image(pad)).toBe(original)
+  expect((await stats(page.locator('.shape-preview'))).area).toBe(0)
+  // Reverse dragging preserves the same square geometry.
+  await page.mouse.move(start.x + b.width * .3, start.y + b.height * .3); await page.mouse.down()
+  await page.mouse.move(start.x, start.y); await page.mouse.up()
+  const combined = await image(pad)
+  const combinedArea = (await stats(pad)).area
+  expect(combined).not.toBe(original)
+  await page.getByRole('button', { name: 'Restore', exact: true }).click()
+  await page.mouse.move(start.x, start.y); await page.mouse.down()
+  await page.mouse.move(start.x + b.width * .3, start.y + b.height * .3); await page.mouse.up()
+  expect((await stats(pad)).area).toBeLessThan(combinedArea)
+  await page.getByRole('button', { name: 'Undo shaping', exact: true }).click()
+  expect(await image(pad)).toBe(combined)
+  await page.getByRole('button', { name: 'Stamp privately', exact: true }).click()
+  const cursor = page.getByLabel('Stamping surface:', { exact: false })
+  await land(page, await box(cursor))
+  expect((await stats(page.getByLabel('Your stamped composition', { exact: true }))).area).toBeGreaterThan(1000)
+  await page.getByRole('button', { name: 'Edit stamp', exact: true }).click()
+  expect(await image(pad)).toBe(combined)
+  await page.getByRole('button', { name: 'Undo shaping', exact: true }).click()
+  expect(await image(pad)).toBe(original)
+  await page.getByRole('group', { name: 'Carving shape', exact: true }).getByRole('button', { name: 'Freehand', exact: true }).click()
+  await page.getByRole('button', { name: 'Carve', exact: true }).click()
+  await page.mouse.click(b.x + b.width * .5, b.y + b.height * .5)
+  expect(await image(pad)).not.toBe(original)
+})

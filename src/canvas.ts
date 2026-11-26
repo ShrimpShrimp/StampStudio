@@ -21,6 +21,7 @@ export function makeCanvas(width: number, height: number) {
 
 export type Point = { x: number; y: number }
 export type Pose = Point & { angle: number }
+export type CarvingShape = 'freehand' | 'square' | 'circle' | 'triangle'
 
 export function pointOn(canvas: HTMLCanvasElement, e: { clientX: number; clientY: number }): Point {
   const box = canvas.getBoundingClientRect()
@@ -30,27 +31,34 @@ export function pointOn(canvas: HTMLCanvasElement, e: { clientX: number; clientY
   }
 }
 
-/** Transparent original artwork; one history entry per pen/eraser stroke. */
+/** Transparent original artwork; one history entry per stroke or completed shape. */
 export class DesignPad {
   private ctx: CanvasRenderingContext2D
+  private previewCtx: CanvasRenderingContext2D
   private history: ImageData[] = []
   private pointer: number | null = null
   private previous: Point | null = null
+  private start: Point | null = null
+  private gesture: { shape: CarvingShape; tool: 'pen' | 'eraser'; width: number } | null = null
   tool: 'pen' | 'eraser' = 'pen'
+  shape: CarvingShape = 'freehand'
   width = 15
   hasInk = false
   private abort = new AbortController()
 
-  constructor(readonly canvas: HTMLCanvasElement, private changed: () => void) {
+  constructor(readonly canvas: HTMLCanvasElement, readonly preview: HTMLCanvasElement, private changed: () => void) {
     canvas.width = canvas.height = DESIGN_SIZE
+    preview.width = preview.height = DESIGN_SIZE
     this.ctx = context(canvas)
+    this.previewCtx = context(preview)
     const options = { signal: this.abort.signal }
     canvas.addEventListener('pointerdown', this.down, options)
     canvas.addEventListener('pointermove', this.move, options)
     canvas.addEventListener('pointerup', this.up, options)
-    canvas.addEventListener('pointercancel', this.up, options)
-    canvas.addEventListener('lostpointercapture', this.up, options)
+    canvas.addEventListener('pointercancel', this.cancel, options)
+    canvas.addEventListener('lostpointercapture', this.cancel, options)
     window.addEventListener('blur', this.finish, options)
+    document.addEventListener('visibilitychange', this.visibility, options)
   }
 
   get canUndo() { return this.history.length > 0 }
@@ -64,20 +72,22 @@ export class DesignPad {
     e.preventDefault()
     const start = pointOn(this.canvas, e)
     if (Math.hypot(start.x - DESIGN_SIZE / 2, start.y - DESIGN_SIZE / 2) > DESIGN_SIZE * .47) return
-    this.snapshot()
+    this.gesture = { shape: this.shape, tool: this.tool, width: this.width }
+    if (this.shape === 'freehand') this.snapshot()
     this.pointer = e.pointerId
     this.canvas.setPointerCapture(e.pointerId)
-    this.previous = pointOn(this.canvas, e)
-    this.stroke(this.previous, this.previous)
+    this.start = this.previous = start
+    if (this.shape === 'freehand') this.stroke(start, start)
+    else this.changed()
   }
   private stroke(from: Point, to: Point) {
     this.ctx.save()
     this.ctx.beginPath()
     this.ctx.arc(DESIGN_SIZE / 2, DESIGN_SIZE / 2, DESIGN_SIZE * .47, 0, Math.PI * 2)
     this.ctx.clip()
-    this.ctx.globalCompositeOperation = this.tool === 'eraser' ? 'destination-out' : 'source-over'
+    this.ctx.globalCompositeOperation = this.gesture?.tool === 'eraser' ? 'destination-out' : 'source-over'
     this.ctx.strokeStyle = this.ctx.fillStyle = INK
-    this.ctx.lineWidth = this.width * (this.tool === 'eraser' ? 2 : 1)
+    this.ctx.lineWidth = (this.gesture?.width ?? this.width) * (this.gesture?.tool === 'eraser' ? 2 : 1)
     this.ctx.lineJoin = this.ctx.lineCap = 'round'
     if (from.x === to.x && from.y === to.y) {
       this.ctx.beginPath()
@@ -94,6 +104,12 @@ export class DesignPad {
   }
   private move = (e: PointerEvent) => {
     if (e.pointerId !== this.pointer || !this.previous) return
+    if (this.gesture?.shape !== 'freehand') {
+      this.previous = pointOn(this.canvas, e)
+      this.previewCtx.clearRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
+      this.drawShape(this.previewCtx, this.previous, true)
+      return
+    }
     const samples = e.getCoalescedEvents?.() ?? []
     for (const sample of samples.length ? samples : [e]) {
       const next = pointOn(this.canvas, sample)
@@ -103,15 +119,47 @@ export class DesignPad {
   }
   private up = (e: PointerEvent) => {
     if (e.pointerId !== this.pointer) return
-    this.finish()
+    if (this.gesture?.shape !== 'freehand') this.previous = pointOn(this.canvas, e)
+    this.end(true)
   }
-  finish = () => {
+  private drawShape(ctx: CanvasRenderingContext2D, end: Point, preview = false) {
+    if (!this.start || !this.gesture) return false
+    const dx = end.x - this.start.x, dy = end.y - this.start.y
+    const side = Math.max(Math.abs(dx), Math.abs(dy))
+    if (side < 4) return false
+    const x = dx < 0 ? this.start.x - side : this.start.x
+    const y = dy < 0 ? this.start.y - side : this.start.y
+    ctx.save()
+    ctx.beginPath(); ctx.arc(DESIGN_SIZE / 2, DESIGN_SIZE / 2, DESIGN_SIZE * .47, 0, Math.PI * 2); ctx.clip()
+    ctx.globalCompositeOperation = !preview && this.gesture.tool === 'eraser' ? 'destination-out' : 'source-over'
+    ctx.strokeStyle = INK
+    ctx.lineWidth = this.gesture.width * (this.gesture.tool === 'eraser' ? 2 : 1)
+    ctx.lineJoin = 'round'
+    if (preview) ctx.setLineDash([10, 6])
+    ctx.beginPath()
+    if (this.gesture.shape === 'circle') ctx.arc(x + side / 2, y + side / 2, side / 2, 0, Math.PI * 2)
+    else if (this.gesture.shape === 'square') ctx.rect(x, y, side, side)
+    else { ctx.moveTo(x + side / 2, y); ctx.lineTo(x + side, y + side); ctx.lineTo(x, y + side); ctx.closePath() }
+    ctx.stroke(); ctx.restore()
+    return true
+  }
+  private end(commit: boolean) {
     const id = this.pointer
+    if (id === null) return
+    if (commit && this.gesture?.shape !== 'freehand' && this.start && this.previous && Math.max(Math.abs(this.previous.x - this.start.x), Math.abs(this.previous.y - this.start.y)) >= 4) {
+      this.snapshot()
+      this.drawShape(this.ctx, this.previous)
+    }
     this.pointer = null
-    this.previous = null
+    this.previous = this.start = null
+    this.gesture = null
+    this.previewCtx.clearRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
     if (id !== null && this.canvas.hasPointerCapture(id)) this.canvas.releasePointerCapture(id)
     this.refresh()
   }
+  finish = () => this.end(false)
+  private cancel = (e: PointerEvent) => { if (e.pointerId === this.pointer) this.finish() }
+  private visibility = () => { if (document.hidden) this.finish() }
   refresh() {
     const pixels = this.ctx.getImageData(0, 0, DESIGN_SIZE, DESIGN_SIZE).data
     this.hasInk = pixels.some((value, index) => index % 4 === 3 && value > 0)
@@ -129,7 +177,7 @@ export class DesignPad {
     this.ctx.clearRect(0, 0, DESIGN_SIZE, DESIGN_SIZE)
     this.refresh()
   }
-  destroy() { this.abort.abort() }
+  destroy() { this.finish(); this.abort.abort() }
 }
 
 
