@@ -61,7 +61,7 @@
  .board-tools .stamp-help { grid-column:1/-1; }
  .board-viewport { height:60dvh; min-height:340px; }
  .board-topline { flex-wrap:wrap; gap:10px; }
- .board-view-tools { width:100%; justify-content:space-between; gap:6px; }
+ .board-view-tools { width:100%; justify-content:space-between; flex-wrap:wrap; gap:6px; }
  .board-topline button { padding:7px 10px; }
  .board-bottomline>span { display:none; }
 }
@@ -81,4 +81,7 @@
  .board-view-tools { gap:5px; }
  .board-topline button { padding:7px 9px; }
  .board-modes,.board-zoom { gap:2px; }
+}
+@media(max-width:360px) {
+ .board-stamp-controls { grid-template-columns:1fr; }
 }

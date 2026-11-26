@@ -244,7 +244,7 @@ test('export includes the form, ink and moisture, preserves editing, and exclude
 test('desktop and mobile layouts fit, with actual document desk evidence', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', e => errors.push(e.message))
-  for (const width of [1440, 1024, 390]) {
+  for (const width of [1440, 1024, 320, 390]) {
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     if (width >= 900) await expect(page.getByRole('button', { name: 'Stamp privately', exact: true })).toBeInViewport()

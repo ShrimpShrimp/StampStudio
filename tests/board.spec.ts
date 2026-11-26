@@ -290,4 +290,8 @@ test('browsing starts in Move; making a stamp reveals tools and keeps new marks 
   expect(await pixels(page.getByTestId('shared-draft'))).toBe(ink)
   const after = await page.request.get('http://127.0.0.1:8788/contributions').then(r => r.json())
   expect(after.total).toBe(before.total)
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  }
 })

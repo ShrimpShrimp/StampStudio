@@ -158,7 +158,7 @@ kbd { font-family:inherit; font-size:12px; border:1px solid #b4bda2; border-radi
  .brand { font-size:19px; }
  .brand-seal { width:32px; height:34px; }
  .brand-seal svg { width:24px; }
- .studio-nav { justify-content:space-between; }
+ .studio-nav { justify-content:space-between; flex-wrap:wrap; }
  .studio-nav button { flex:1 0 auto; padding:8px 6px; white-space:nowrap; }
  .design-stage { grid-template-columns:1fr; gap:18px; padding:20px 0 24px; min-height:0; }
  h1 { font-size:48px; }
