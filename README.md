@@ -20,7 +20,7 @@ Open the printed URL, normally `http://127.0.0.1:5173/StampStudio/`.
 ```sh
 npm run build       # TypeScript checks and production build
 npm run preview     # Serve the production build locally
-npm test            # Twenty browser integration tests, with isolated shared storage
+npm test            # Twenty-two browser integration tests, with isolated shared storage
 npm run test:server # Four storage and validation tests
 ```
 
@@ -28,7 +28,7 @@ Local tests use installed Google Chrome. CI installs Playwright Chromium. To use
 
 ## At the workbench
 
-Shape a personal symbol inside the circular rubber face. **Carve** adds a line; **Restore** removes part of it. Choose a fine, medium, or bold tool, undo, or start over. The preview shows which lines will carry ink. The warm cut-line appearance is a visual treatment; the original artwork is retained as a transparent mask, not inverted into a different design.
+Shape a personal symbol inside the circular rubber face. **Carve** adds a line; **Restore** removes part of it. Keep **Freehand**, or choose **Square**, **Circle**, or **Triangle**. Drag from one corner to size an outline, then release to carve it; the preview follows your drag without leaving intermediate shapes. Shapes keep their proportions and use the same fine, medium, or bold line widths. **Restore** also works with shapes. Undo removes a whole shape in one step; an interrupted shape drag leaves the design unchanged. The preview shows which lines will carry ink. The warm cut-line appearance is a visual treatment; the original artwork is retained as a transparent mask, not inverted into a different design.
 
 ## At the desk
 
@@ -72,6 +72,6 @@ The Vite base is `/StampStudio/`. `.github/workflows/deploy.yml` checks types, b
 
 ## Validation and process
 
-The original twelve browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout. Additional comparisons replay identical slides and asymmetric rotations at different speeds, and verify visible ink buildup before a stopped slide soaks the paper. Seven DE3 browser tests exercise independent browsers, concurrent commits, refresh recovery, failed-response retries, draft isolation, color/pressure/slide preservation, and pan/zoom on desktop and mobile. Four server tests check durable storage, append-only routes, authorization, safe PNG handling, idempotency, and atomic limits.
+The original twelve browser tests cover the circular editor, erase/undo, strong and thin regions from a light tap, local pressure, connected sliding, idle/contact rotation, exact angles, dampness and failure, recovery, stage preservation, PNG contents, and desktop/mobile layout. Additional comparisons replay identical slides and asymmetric rotations at different speeds, and verify visible ink buildup before a stopped slide soaks the paper. Eight DE3 browser tests exercise independent browsers, concurrent commits, refresh recovery, failed-response retries, draft isolation, color/pressure/slide preservation, and pan/zoom on desktop and mobile. Two shape tests cover resizing previews, outline geometry, one-step undo, interrupted and reverse drags, Restore, freehand combinations, and transfer to the document. Four server tests check durable storage, append-only routes, authorization, safe PNG handling, idempotency, and atomic limits.
 
 See [`docs/process/README.md`](docs/process/README.md) for actual development captures and notes. They document implementation and project-owner feedback, not a participant study.
